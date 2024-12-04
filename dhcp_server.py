@@ -1,6 +1,24 @@
 import socket
 import random
 
+def handle_discover(server_socket, client_address, ip_pool, lease_time):
+    print("Received DHCP Discover message.")
+    
+    # Offer an IP address
+    offered_ip = random.choice(ip_pool)
+    offer_message = f"DHCPOffer {offered_ip} LeaseTime {lease_time}".encode()
+    server_socket.sendto(offer_message, client_address)
+    print(f"Sent DHCP Offer with IP: {offered_ip}")
+
+def handle_request(server_socket, client_address, data):
+    requested_ip = data.decode().split(" ")[1]  # Extract requested IP
+    print(f"Received DHCP Request for IP: {requested_ip}")
+    
+    # Acknowledge the client's request
+    ack_message = f"DHCP Acknowledge {requested_ip}".encode()
+    server_socket.sendto(ack_message, client_address)
+    print(f"Sent DHCP Acknowledge for IP: {requested_ip}")
+
 def start_server():
     # Create a UDP socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -21,23 +39,11 @@ def start_server():
 
         # Handling DHCP Discover message
         if data.decode() == "DHCP Discover":
-            print("Received DHCP Discover message.")
-            
-            # Offer an IP address
-            offered_ip = random.choice(ip_pool)
-            offer_message = f"DHCPOffer {offered_ip} LeaseTime {lease_time}".encode()
-            server_socket.sendto(offer_message, client_address)
-            print(f"Sent DHCP Offer with IP: {offered_ip}")
+            handle_discover(server_socket, client_address, ip_pool, lease_time)
 
         # Handling DHCP Request message
         elif "DHCPOffered" in data.decode():
-            requested_ip = data.decode().split(" ")[1]  # Extract requested IP
-            print(f"Received DHCP Request for IP: {requested_ip}")
-            
-            # Acknowledge the client's request
-            ack_message = f"DHCP Acknowledge {requested_ip}".encode()
-            server_socket.sendto(ack_message, client_address)
-            print(f"Sent DHCP Acknowledge for IP: {requested_ip}")
+            handle_request(server_socket, client_address, data)
         
 if __name__ == "__main__":
     start_server()

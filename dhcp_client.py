@@ -6,9 +6,18 @@ def send_dhcp_discover(client_socket, server_address):
     client_socket.sendto(message, server_address)
 
 def receive_dhcp_offer(client_socket):
-    offer_message, _ = client_socket.recvfrom(1024)
-    print(f"Received message: {offer_message.decode()}")
-    return offer_message.decode().split(" ")[1]
+    response, _ = client_socket.recvfrom(1024)
+    response_message = response.decode()
+    print(f"Received message: {response_message}")
+
+    if response_message.startswith("DHCP Nak"):
+        print("Received DHCP Nak: No IP address available. Terminating connection.")
+        return None  # Indicates failure to obtain an IP
+    elif response_message.startswith("DHCPOffer"):
+        return response_message.split(" ")[1]  # Extract the offered IP
+    else:
+        print("Unexpected message received. Terminating connection.")
+        return None
 
 def send_dhcp_request(client_socket, server_address, offered_ip):
     request_message = f"DHCPOffered {offered_ip}".encode()
@@ -26,6 +35,11 @@ def start_client():
     try:
         send_dhcp_discover(client_socket, server_address)
         offered_ip = receive_dhcp_offer(client_socket)
+
+        if offered_ip is None:
+            print("No IP address obtained. Exiting.")
+            return
+        
         send_dhcp_request(client_socket, server_address, offered_ip)
         receive_dhcp_ack(client_socket)
     finally:

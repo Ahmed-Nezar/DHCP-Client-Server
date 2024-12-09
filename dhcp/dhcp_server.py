@@ -3,10 +3,18 @@ import socket
 class Server:
     
     lease_table = {}  # Stores the current leases
+    blacklist_macs = [
+        "00:16:3e:4c:6f:7a"
+    ]
     @staticmethod
     def _handle_discover(server_socket, client_address, ip_pool, lease_time, tid, mac_address):
         print(f"Received DHCP Discover message with TID: {tid} and MAC address: {mac_address}")
 
+        if mac_address in Server.blacklist_macs:
+            nak_message = f"DHCP Nak Blacklisted MAC {tid}".encode()
+            server_socket.sendto(nak_message, client_address)
+            print(f"Sent DHCP Nak to {client_address}: Blacklisted MAC with TID: {tid}")
+            return
         # Find the first available IP
         available_ip = None
         for ip in ip_pool:
@@ -20,6 +28,7 @@ class Server:
             server_socket.sendto(nak_message, client_address)
             print(f"Sent DHCP Nak to {client_address}: No available IPs with TID: {tid}")
             return
+    
 
         # Offer the available IP
         offer_message = f"DHCPOffer {available_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
@@ -70,7 +79,7 @@ class Server:
         while True:
             # Receive a message from the client
             data, client_address = server_socket.recvfrom(1024)
-            parts = data.decode().split(" ")
+            parts = data.decode(errors='ignore').split(" ")
 
             # Handling DHCP Discover message
             if parts[0] == "DHCP" and parts[1] == "Discover":

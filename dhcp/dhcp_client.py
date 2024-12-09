@@ -44,8 +44,8 @@ class Client:
                random.randint(0x00, 0xff),
                random.randint(0x00, 0xff)]
         random_mac = ':'.join(map(lambda x: "%02x" % x, mac))
-        predefined_mac = "00:16:3e:4c:6f:7a"
-        return random_mac if random.choice([True, False]) else predefined_mac       
+        predefined_mac = "18:05:03:30:11:03"
+        return random_mac if random.choice([True, True, True, False]) else predefined_mac       
     
     @staticmethod
     def start_client():

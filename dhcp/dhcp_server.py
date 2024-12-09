@@ -1,10 +1,12 @@
 import socket
+import threading
+import time
 
 class Server:
     
     lease_table = {}  # Stores the current leases
     blacklist_macs = [
-        "00:16:3e:4c:6f:7a"
+        "18:05:03:30:11:03"
     ]
     @staticmethod
     def _handle_discover(server_socket, client_address, ip_pool, lease_time, tid, mac_address):
@@ -64,6 +66,19 @@ class Server:
         print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {client_address} with TID: {tid} and MAC: {mac_address}")
 
     @staticmethod
+    def _decrement_lease_times():
+        while True:
+            time.sleep(1)
+            for tid, entry in list(Server.lease_table.items()):
+                lease_time = entry[1]
+                if lease_time <= 0:
+                    del Server.lease_table[tid]
+                else:
+                    Server.lease_table[tid] = (entry[0], lease_time - 1, entry[2])
+            if Server.lease_table:
+                print(f"Lease Table: {Server.lease_table}")
+    
+    @staticmethod
     def start_server():
         # Create a UDP socket
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -74,7 +89,11 @@ class Server:
 
         # Simple IP pool (for demonstration purposes)
         ip_pool = ["192.168.1." + str(i) for i in range(100, 103)]
-        lease_time = 3600  # 1 hour lease time
+        lease_time = 10  # 1 hour lease time
+        
+        lease_thread = threading.Thread(target=Server._decrement_lease_times)
+        lease_thread.daemon = True 
+        lease_thread.start()
 
         while True:
             # Receive a message from the client
@@ -94,3 +113,4 @@ class Server:
             # Print current lease table for debugging
             print(f"Current Lease Table: {Server.lease_table}")
             print('>' * 40)
+            

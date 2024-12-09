@@ -17,7 +17,14 @@ class Server:
             server_socket.sendto(nak_message, client_address)
             print(f"Sent DHCP Nak to {client_address}: Blacklisted MAC with TID: {tid}")
             return
-        # Find the first available IP
+        
+        for value in Server.lease_table.values():
+            if value[2] == mac_address:
+                nak_message = f"DHCP Nak MAC Already Leased {tid}".encode()
+                server_socket.sendto(nak_message, client_address)
+                print(f"Sent DHCP Nak to {client_address}: MAC already leased with TID: {tid}")
+                return
+
         available_ip = None
         for ip in ip_pool:
             if ip not in [entry[0] for entry in Server.lease_table.values()]:

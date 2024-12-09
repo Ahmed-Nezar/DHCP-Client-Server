@@ -1,14 +1,11 @@
 import socket
-import random
-import time
 
 class Server:
-    # Define a lease management system
-    lease_table = {}  # {tid: (assigned_ip, lease_expiry_time)}
     
+    lease_table = {}  # Stores the current leases
     @staticmethod
-    def _handle_discover(server_socket, client_address, ip_pool, lease_time, tid):
-        print(f"Received DHCP Discover message with TID: {tid}")
+    def _handle_discover(server_socket, client_address, ip_pool, lease_time, tid, mac_address):
+        print(f"Received DHCP Discover message with TID: {tid} and MAC address: {mac_address}")
 
         # Find the first available IP
         available_ip = None
@@ -25,16 +22,17 @@ class Server:
             return
 
         # Offer the available IP
-        offer_message = f"DHCPOffer {available_ip} {tid} LeaseTime {lease_time}".encode()
+        offer_message = f"DHCPOffer {available_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
         server_socket.sendto(offer_message, client_address)
-        print(f"Sent DHCP Offer with IP: {available_ip} to {client_address} with TID: {tid}")
+        print(f"Sent DHCP Offer with IP: {available_ip} to {client_address} with TID: {tid} and MAC: {mac_address}")
 
     @staticmethod
     def _handle_request(server_socket, client_address, data, ip_pool, lease_time):
         parts = data.decode().split(" ")
         requested_ip = parts[2]  # Extract requested IP
         tid = parts[3]  # Extract TID
-        print(f"Received DHCP Request for IP: {requested_ip} with TID: {tid}")
+        mac_address = parts[4]  # Extract MAC address
+        print(f"Received DHCP Request for IP: {requested_ip} with TID: {tid} and MAC address: {mac_address}")
 
         # Check if the requested IP is valid and not currently leased
         if requested_ip not in ip_pool:
@@ -50,13 +48,11 @@ class Server:
             return
 
         # Acknowledge the lease
-        current_time = time.time()
-        lease_expiry_time = current_time + lease_time     #/3600 AFTER TESTING
-        Server.lease_table[tid] = (requested_ip, lease_expiry_time)
+        Server.lease_table[tid] = (requested_ip, lease_time, mac_address)
 
-        ack_message = f"DHCP Acknowledge {requested_ip} {tid} LeaseTime {lease_time}".encode()
+        ack_message = f"DHCP Acknowledge {requested_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
         server_socket.sendto(ack_message, client_address)
-        print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {client_address} with TID: {tid}")
+        print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {client_address} with TID: {tid} and MAC: {mac_address}")
 
     @staticmethod
     def start_server():
@@ -75,12 +71,12 @@ class Server:
             # Receive a message from the client
             data, client_address = server_socket.recvfrom(1024)
             parts = data.decode().split(" ")
-            print(f"Received message from {client_address}: {data.decode()}")
 
             # Handling DHCP Discover message
             if parts[0] == "DHCP" and parts[1] == "Discover":
                 tid = parts[2]
-                Server._handle_discover(server_socket, client_address, ip_pool, lease_time, tid)
+                mac_address = parts[3]
+                Server._handle_discover(server_socket, client_address, ip_pool, lease_time, tid, mac_address)
 
             # Handling DHCP Request message
             elif parts[0] == "DHCP" and parts[1] == "Request":
@@ -89,5 +85,3 @@ class Server:
             # Print current lease table for debugging
             print(f"Current Lease Table: {Server.lease_table}")
             print('>' * 40)
-
-

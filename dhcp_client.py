@@ -1,7 +1,8 @@
 import socket
+import random
 
-def send_dhcp_discover(client_socket, server_address):
-    message = "DHCP Discover".encode()
+def send_dhcp_discover(client_socket, server_address, TID):
+    message = f"DHCP Discover {TID}".encode()
     print(f"Sending message: {message.decode()}")
     client_socket.sendto(message, server_address)
 
@@ -12,16 +13,17 @@ def receive_dhcp_offer(client_socket):
 
     if response_message.startswith("DHCP Nak"):
         print("Received DHCP Nak: No IP address available. Terminating connection.")
-        return None  # Indicates failure to obtain an IP
+        return None, None  # Indicates failure to obtain an IP
     elif response_message.startswith("DHCPOffer"):
-        return response_message.split(" ")[1]  # Extract the offered IP
+        parts = response_message.split(" ")
+        return parts[1], parts[2]  # Extract the offered IP and TID
     else:
         print("Unexpected message received. Terminating connection.")
-        return None
+        return None, None
 
-def send_dhcp_request(client_socket, server_address, offered_ip):
-    request_message = f"DHCPOffered {offered_ip}".encode()
-    print(f"Sending DHCP Request for IP: {offered_ip}")
+def send_dhcp_request(client_socket, server_address, offered_ip, TID):
+    request_message = f"DHCP Request {offered_ip} {TID}".encode()
+    print(f"Sending DHCP Request for IP: {offered_ip} with TID: {TID}")
     client_socket.sendto(request_message, server_address)
 
 def receive_dhcp_ack(client_socket):
@@ -33,14 +35,15 @@ def start_client():
     server_address = ("127.0.0.1", 67)  # Server IP and port (localhost for testing)
 
     try:
-        send_dhcp_discover(client_socket, server_address)
-        offered_ip = receive_dhcp_offer(client_socket)
+        TID = random.randint(1, 100000)  # Generate a random transaction ID
+        send_dhcp_discover(client_socket, server_address, TID)
+        offered_ip, response_TID = receive_dhcp_offer(client_socket)
 
-        if offered_ip is None:
-            print("No IP address obtained. Exiting.")
+        if offered_ip is None or str(TID) != response_TID:
+            print("Transaction ID mismatch or no IP address obtained. Exiting.")
             return
         
-        send_dhcp_request(client_socket, server_address, offered_ip)
+        send_dhcp_request(client_socket, server_address, offered_ip, TID)
         receive_dhcp_ack(client_socket)
     finally:
         client_socket.close()

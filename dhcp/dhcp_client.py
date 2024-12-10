@@ -1,5 +1,6 @@
 import socket
 import random
+from dhcp.utils import get_valid_ipv4
 
 class Client:
     
@@ -47,10 +48,16 @@ class Client:
         predefined_mac = "18:05:03:30:11:03"
         return random_mac if random.choice([True, True, True, False]) else predefined_mac       
     
+
+    
     @staticmethod
     def start_client():
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        server_address = ("127.0.0.1", 67)  # Server IP and port (localhost for testing)
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)  # Enable broadcast
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        client_socket.bind(("0.0.0.0", 68))  # Bind to 0.0.0.0:68 (DHCP client port)
+        
+        server_address = (get_valid_ipv4(), 67)  # DHCP server port and broadcast address
 
         try:
             TID = random.randint(1, 100000)  # Generate a random transaction ID
@@ -61,7 +68,7 @@ class Client:
             if offered_ip is None or str(TID) != response_TID:
                 print("Transaction ID mismatch or no IP address obtained. Exiting.")
                 return
-            
+
             Client._send_dhcp_request(client_socket, server_address, offered_ip, TID, mac_address)
             Client._receive_dhcp_ack(client_socket)
         finally:

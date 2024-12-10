@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+from dhcp.utils import get_valid_ipv4
 
 class Server:
     
@@ -89,7 +90,8 @@ class Server:
     def start_server():
         # Create a UDP socket
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        server_address = ("0.0.0.0", 67)  # Listen on all network interfaces, port 67
+        ipv4_address = get_valid_ipv4()
+        server_address = (ipv4_address, 67)  # Listen on all network interfaces, port 67
         server_socket.bind(server_address)
 
         print("DHCP Server is running and listening on port 67...")

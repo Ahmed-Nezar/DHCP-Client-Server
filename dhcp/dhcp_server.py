@@ -9,6 +9,7 @@ class Server:
     blacklist_macs = [
         "18:05:03:30:11:03"
     ]
+    
     @staticmethod
     def _handle_discover(server_socket, client_address, ip_pool, lease_time, tid, mac_address):
         print(f"Received DHCP Discover message with TID: {tid} and MAC address: {mac_address}")
@@ -38,8 +39,7 @@ class Server:
             server_socket.sendto(nak_message, client_address)
             print(f"Sent DHCP Nak to {client_address}: No available IPs with TID: {tid}")
             return
-    
-
+        
         # Offer the available IP
         offer_message = f"DHCPOffer {available_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
         server_socket.sendto(offer_message, client_address)
@@ -60,6 +60,24 @@ class Server:
             print(f"Sent DHCP Nak to {client_address}: Invalid IP requested with TID: {tid}")
             return
 
+        # Check if the IP is leased and if the renewal is valid
+        lease_entry = Server.lease_table.get(tid)
+        if lease_entry:
+            leased_ip, lease_time_left, _ = lease_entry
+            if leased_ip == requested_ip:
+                # Renew the lease (extend the lease time)
+                Server.lease_table[tid] = (requested_ip, lease_time, mac_address)
+                ack_message = f"DHCP Acknowledge {requested_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
+                server_socket.sendto(ack_message, client_address)
+                print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {client_address} with TID: {tid} and MAC: {mac_address}")
+                return
+            else:
+                nak_message = f"DHCP Nak IP Mismatch {tid}".encode()
+                server_socket.sendto(nak_message, client_address)
+                print(f"Sent DHCP Nak to {client_address}: IP mismatch with TID: {tid}")
+                return
+
+        # If it's a new lease request
         if any(entry[0] == requested_ip for entry in Server.lease_table.values()):
             nak_message = f"DHCP Nak IP Already Leased {tid}".encode()
             server_socket.sendto(nak_message, client_address)
@@ -68,7 +86,6 @@ class Server:
 
         # Acknowledge the lease
         Server.lease_table[tid] = (requested_ip, lease_time, mac_address)
-
         ack_message = f"DHCP Acknowledge {requested_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
         server_socket.sendto(ack_message, client_address)
         print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {client_address} with TID: {tid} and MAC: {mac_address}")
@@ -98,7 +115,7 @@ class Server:
 
         # Simple IP pool (for demonstration purposes)
         ip_pool = ["192.168.1." + str(i) for i in range(100, 103)]
-        lease_time = 10  # 1 hour lease time
+        lease_time = 10  # Lease time in seconds
         
         lease_thread = threading.Thread(target=Server._decrement_lease_times)
         lease_thread.daemon = True 
@@ -122,4 +139,3 @@ class Server:
             # Print current lease table for debugging
             print(f"Current Lease Table: {Server.lease_table}")
             print('>' * 40)
-            

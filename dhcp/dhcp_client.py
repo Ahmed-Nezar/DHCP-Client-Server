@@ -2,6 +2,7 @@ import socket
 import random
 import time
 from dhcp.utils import get_valid_ipv4
+import signal
 
 class Client:
     
@@ -77,6 +78,17 @@ class Client:
 
             Client._send_dhcp_request(client_socket, server_address, offered_ip, TID, mac_address)
             Client._receive_dhcp_ack(client_socket)
+            def release_ip(signum, frame):
+                print("Client terminated. Releasing IP...")
+                # Send DHCP Release message (optional, based on further requirements)
+                release_message = f"DHCP Release {offered_ip} {TID} {mac_address}".encode()
+                client_socket.sendto(release_message, server_address)
+                client_socket.close()
+                exit(0)
+
+            # Register signal handler for termination
+            signal.signal(signal.SIGINT, release_ip)
+            signal.signal(signal.SIGTERM, release_ip)
 
             # Start the lease time countdown
             Client.lease_timer = Client.lease_time
@@ -95,6 +107,8 @@ class Client:
 
             print("Lease expired. Releasing IP...")
             # If lease expires, send release request (optional, based on further requirements)
+            release_message = f"DHCP Release {offered_ip} {TID} {mac_address}".encode()
+            client_socket.sendto(release_message, server_address)
             
         finally:
             client_socket.close()

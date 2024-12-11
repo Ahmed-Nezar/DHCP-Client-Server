@@ -136,6 +136,24 @@ class Server:
             elif parts[0] == "DHCP" and parts[1] == "Request":
                 Server._handle_request(server_socket, client_address, data, ip_pool, lease_time)
 
-            # Print current lease table for debugging
-            print(f"Current Lease Table: {Server.lease_table}")
-            print('>' * 40)
+            # Handling DHCP Release message
+            elif parts[0] == "DHCP" and parts[1] == "Release":
+                offered_ip = parts[2]  # Extract the offered IP
+                tid = parts[3]         # Extract the TID
+                mac_address = parts[4] # Extract the MAC address
+                print(f"Received DHCP Release for IP: {offered_ip}, TID: {tid}, MAC: {mac_address}")
+
+                # Check if the TID exists in the lease table
+                if tid in Server.lease_table:
+                    leased_ip, _, leased_mac = Server.lease_table[tid]
+                    if leased_ip == offered_ip and leased_mac == mac_address:
+                        del Server.lease_table[tid]
+                        print(f"Released IP: {leased_ip} for TID: {tid} and MAC: {mac_address}")
+                    else:
+                        print(f"Mismatch for TID: {tid}. Expected IP: {leased_ip}, MAC: {leased_mac}, Received IP: {offered_ip}, MAC: {mac_address}")
+                else:
+                    print(f"No lease found for TID: {tid}")
+
+# Print current lease table for debugging
+print(f"Current Lease Table: {Server.lease_table}")
+print('>' * 40)

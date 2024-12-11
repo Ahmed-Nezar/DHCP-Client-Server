@@ -90,6 +90,8 @@ class Client:
                 if Client.lease_timer == Client.lease_time // 2:
                     print("Lease time halved, sending renewal request...")
                     Client._send_renewal_request(client_socket, server_address, offered_ip, TID, mac_address)
+                    Client._receive_dhcp_ack(client_socket)
+                    Client.lease_timer = Client.lease_time  # Reset lease timer after renewal
 
             print("Lease expired. Releasing IP...")
             # If lease expires, send release request (optional, based on further requirements)

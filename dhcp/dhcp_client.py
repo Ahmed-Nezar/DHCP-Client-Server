@@ -53,7 +53,7 @@ class Client:
 
     @staticmethod
     def _send_dhcp_decline(client_socket, server_address, offered_ip, TID, mac_address):
-        decline_message = f"DHCP Decline {offered_ip} {TID} {mac_address}".encode()
+        decline_message = f"DHCP Decline {offered_ip} {TID} {mac_address} {Client.decline_threshold}".encode()
         print(f"Sending DHCP Decline for IP: {offered_ip} with TID: {TID} with MAC: {mac_address}")
         client_socket.sendto(decline_message, server_address)
 

@@ -62,7 +62,7 @@ class Server:
 
         # Handle DHCP Decline
         if parts[0] == "DHCP" and parts[1] == "Decline":
-            print(f"Received DHCP Decline message with TID: {tid} and MAC address: {mac_address}")
+            print(f"Received DHCP Decline message with TID: {tid}, MAC address: {mac_address}, and desired lease time: {lease_time}")
             if tid in Server.lease_table:
                 del Server.lease_table[tid]
                 print(f"Removed declined offer for TID: {tid} and MAC address: {mac_address}")
@@ -141,9 +141,10 @@ class Server:
 
             # Handling DHCP Decline message
             elif parts[0] == "DHCP" and parts[1] == "Decline":
-                tid = parts[2]
-                mac_address = parts[3]
-                print(f"Received DHCP Decline message with TID: {tid} and MAC address: {mac_address}")
+                tid = parts[3]
+                mac_address = parts[4]
+                desired_lease_time = parts[5]
+                print(f"Received DHCP Decline message with TID: {tid}, MAC address: {mac_address}, and desired lease time: {desired_lease_time}")
                 if tid in Server.lease_table:
                     del Server.lease_table[tid]
                     print(f"Removed declined offer for TID: {tid} and MAC address: {mac_address}")

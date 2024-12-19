@@ -105,7 +105,7 @@ class Server:
         Server.lease_table[tid] = (requested_ip, lease_time, mac_address)
         ack_message = f"DHCP Acknowledge {requested_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
         server_socket.sendto(ack_message, client_address)
-        print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {c_address} with TID: {tid} and MAC: {mac_address}")
+        print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {requested_ip} with TID: {tid} and MAC: {mac_address}")
 
     @staticmethod
     def _decrement_lease_times():

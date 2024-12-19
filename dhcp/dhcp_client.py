@@ -9,33 +9,53 @@ class Client:
     lease_time = 10  # Lease time in seconds
     lease_timer = None  # Timer to track remaining lease time
     
+    # Threshold for lease time to decline the offer
+    @staticmethod
+    def _select_ramdom_decline_threshold():
+        predefined_decline_threshold = 3600
+        return 5 if random.choice([True, True, True, False]) else predefined_decline_threshold
+    
+    decline_threshold = _select_ramdom_decline_threshold()
+    
     @staticmethod
     def _send_dhcp_discover(client_socket, server_address, TID, mac_address):
         message = f"DHCP Discover {TID} {mac_address}".encode()
         print(f"Sending message: {message.decode()}")
         client_socket.sendto(message, server_address)
-   
+
     @staticmethod
     def _receive_dhcp_offer(client_socket):
         response, _ = client_socket.recvfrom(1024)
         response_message = response.decode()
+        Client.lease_time = int(response_message.split(" ")[4])
         print(f"Received message: {response_message}")
 
         if response_message.startswith("DHCP Nak"):
             print("Received DHCP Nak: No IP address available. Terminating connection.")
-            return None, None  # Indicates failure to obtain an IP
+            return None, None, None  # Indicates failure to obtain an IP
         elif response_message.startswith("DHCPOffer"):
             parts = response_message.split(" ")
-            return parts[1], parts[2]  # Extract the offered IP and TID
+            if len(parts) < 4:  # Check if the expected format is correct
+                print("Invalid DHCPOffer message format.")
+                return None, None, None
+            offered_ip = parts[1]
+            offered_lease_time = int(parts[4])  # Correctly parse lease time as an integer
+            return offered_ip, parts[2], offered_lease_time  # Offered IP, TID, Lease Time
         else:
             print("Unexpected message received. Terminating connection.")
-            return None, None
+            return None, None, None
 
     @staticmethod
-    def _send_dhcp_request(client_socket, server_address, offered_ip, TID, mac_address):
-        request_message = f"DHCP Request {offered_ip} {TID} {mac_address}".encode()
-        print(f"Sending DHCP Request for IP: {offered_ip} with TID: {TID} with MAC: {mac_address}")
+    def _send_dhcp_request(client_socket, server_address, offered_ip, TID, mac_address, lease_time):
+        request_message = f"DHCP Request {offered_ip} {TID} {mac_address} {lease_time}".encode()
+        print(f"Sending DHCP Request for IP: {offered_ip} with TID: {TID} with MAC: {mac_address} and Lease Time: {lease_time}")
         client_socket.sendto(request_message, server_address)
+
+    @staticmethod
+    def _send_dhcp_decline(client_socket, server_address, offered_ip, TID, mac_address):
+        decline_message = f"DHCP Decline {offered_ip} {TID} {mac_address}".encode()
+        print(f"Sending DHCP Decline for IP: {offered_ip} with TID: {TID} with MAC: {mac_address}")
+        client_socket.sendto(decline_message, server_address)
 
     @staticmethod
     def _receive_dhcp_ack(client_socket):
@@ -55,7 +75,7 @@ class Client:
     @staticmethod
     def _send_renewal_request(client_socket, server_address, offered_ip, TID, mac_address):
         print("Sending DHCP Renewal Request for IP: " + offered_ip)
-        Client._send_dhcp_request(client_socket, server_address, offered_ip, TID, mac_address)
+        Client._send_dhcp_request(client_socket, server_address, offered_ip, TID, mac_address, Client.lease_time)
         
     @staticmethod
     def start_client():
@@ -70,17 +90,23 @@ class Client:
             TID = random.randint(1, 100000)  # Generate a random transaction ID
             mac_address = Client._select_random_mac()  # Generate or choose a MAC address
             Client._send_dhcp_discover(client_socket, server_address, TID, mac_address)
-            offered_ip, response_TID = Client._receive_dhcp_offer(client_socket)
+            offered_ip, response_TID, offered_lease_time = Client._receive_dhcp_offer(client_socket)
 
             if offered_ip is None or str(TID) != response_TID:
                 print("Transaction ID mismatch or no IP address obtained. Exiting.")
                 return
 
-            Client._send_dhcp_request(client_socket, server_address, offered_ip, TID, mac_address)
+            # Decline the offer if the lease time is below the threshold
+            if offered_lease_time < Client.decline_threshold:
+                Client._send_dhcp_decline(client_socket, server_address, offered_ip, TID, mac_address)
+                print(f"Lease time below threshold, declined the offer for IP: {offered_ip}")
+                return
+
+            # Proceed with DHCP Request if the lease time is acceptable
+            Client._send_dhcp_request(client_socket, server_address, offered_ip, TID, mac_address, offered_lease_time)
             Client._receive_dhcp_ack(client_socket)
             def release_ip(signum, frame):
                 print("Client terminated. Releasing IP...")
-                # Send DHCP Release message (optional, based on further requirements)
                 release_message = f"DHCP Release {offered_ip} {TID} {mac_address}".encode()
                 client_socket.sendto(release_message, server_address)
                 client_socket.close()
@@ -106,7 +132,6 @@ class Client:
                     Client.lease_timer = Client.lease_time  # Reset lease timer after renewal
 
             print("Lease expired. Releasing IP...")
-            # If lease expires, send release request (optional, based on further requirements)
             release_message = f"DHCP Release {offered_ip} {TID} {mac_address}".encode()
             client_socket.sendto(release_message, server_address)
             

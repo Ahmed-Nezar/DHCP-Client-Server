@@ -9,6 +9,7 @@ class Server:
     blacklist_macs = [
         "18:05:03:30:11:03"
     ]
+    discover_tids = set()  # Stores TIDs that have sent a Discover message
     
     @staticmethod
     def _handle_discover(server_socket, client_address, ip_pool, lease_time, tid, mac_address):
@@ -45,6 +46,9 @@ class Server:
         server_socket.sendto(offer_message, client_address)
         print(f"Sent DHCP Offer with IP: {available_ip} to {c_address} with TID: {tid} and MAC: {mac_address}")
 
+        # Add TID to discover_tids set
+        Server.discover_tids.add(tid)
+
     @staticmethod
     def _handle_request(server_socket, client_address, data, ip_pool, lease_time):
         parts = data.decode().split(" ")
@@ -53,6 +57,13 @@ class Server:
         mac_address = parts[4]
         c_address = ("0.0.0.0", 68)
         print(f"Received DHCP Request for IP: {requested_ip} with TID: {tid} and MAC address: {mac_address}")
+
+        # Check if the TID is in the discover_tids set
+        if tid not in Server.discover_tids:
+            nak_message = f"DHCP Nak No Prior Discover {tid}".encode()
+            server_socket.sendto(nak_message, client_address)
+            print(f"Sent DHCP Nak to {client_address}: No prior Discover message with TID: {tid}")
+            return
 
         if requested_ip not in ip_pool:
             nak_message = f"DHCP Nak Invalid IP {tid}".encode()

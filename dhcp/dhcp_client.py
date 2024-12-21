@@ -27,7 +27,7 @@ class Client:
     def _receive_dhcp_offer(client_socket):
         response, _ = client_socket.recvfrom(1024)
         response_message = response.decode()
-        Client.lease_time = int(response_message.split(" ")[4])
+        
         print(f"Received message: {response_message}")
 
         if response_message.startswith("DHCP Nak"):
@@ -39,8 +39,8 @@ class Client:
                 print("Invalid DHCPOffer message format.")
                 return None, None, None
             offered_ip = parts[1]
-            offered_lease_time = int(parts[4])  # Correctly parse lease time as an integer
-            return offered_ip, parts[2], offered_lease_time  # Offered IP, TID, Lease Time
+            Client.lease_time = int(parts[4])
+            return offered_ip, parts[2], Client.lease_time  # Offered IP, TID, Lease Time
         else:
             print("Unexpected message received. Terminating connection.")
             return None, None, None

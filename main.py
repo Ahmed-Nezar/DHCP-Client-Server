@@ -19,7 +19,7 @@ if args.server:
 elif args.client:
     Client.start_client()
 elif args.LAN:
-    LAN_Server.start_server()
+    LAN_Server.start_dhcp_server()
 else:
     print("You must specify either --server or --client")
 

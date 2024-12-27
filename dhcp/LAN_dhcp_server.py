@@ -128,8 +128,8 @@ class LAN_Server:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.bind(('0.0.0.0', LAN_Server.SERVER_PORT))  # Bind to all available interfaces
-        print(f"DHCP server running on {LAN_Server.SERVER_IP}:{LAN_Server.SERVER_PORT}")
-        logging.info(f"DHCP server running on {LAN_Server.SERVER_IP}:{LAN_Server.SERVER_PORT}")
+        print(f"DHCP server running on IP({LAN_Server.SERVER_IP}) PORT({LAN_Server.SERVER_PORT})")
+        logging.info(f"DHCP server running on IP({LAN_Server.SERVER_IP}) PORT({LAN_Server.SERVER_PORT})")
 
         while True:
             try:

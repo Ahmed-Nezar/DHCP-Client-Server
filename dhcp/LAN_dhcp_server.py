@@ -1,5 +1,9 @@
 import socket
 import struct
+import logging
+
+# Configure logging
+logging.basicConfig(filename='d:/ASU/Fall24/Networks/project/DHCP-Client-Server/dhcp/server.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Constants
 SERVER_IP = "192.168.1.1"
@@ -70,11 +74,13 @@ class LAN_Server:
     def _handle_discover(transaction_id, mac_addr, sock):
         """Handle DHCP Discover."""
         print(f"Handling Discover for MAC: {mac_addr}")
+        logging.info(f"Handling Discover for MAC: {mac_addr}")
 
         # Assign the first available IP
         offered_ip = next((ip for ip in LAN_Server.IP_POOL if ip not in LAN_Server.LEASES.values()), None)
         if not offered_ip:
             print("No available IPs in the pool!")
+            logging.warning("No available IPs in the pool!")
             return
 
         # Send DHCP Offer
@@ -83,16 +89,19 @@ class LAN_Server:
         LAN_Server.LEASES[mac_addr] = offered_ip
         sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
         print(f"Offered IP {offered_ip} to MAC {mac_addr}")
+        logging.info(f"Offered IP {offered_ip} to MAC {mac_addr}")
 
     @staticmethod
     def _handle_request(transaction_id, mac_addr, sock):
         """Handle DHCP Request."""
         print(f"Handling Request for MAC: {mac_addr}")
+        logging.info(f"Handling Request for MAC: {mac_addr}")
 
         # Get the offered IP
         offered_ip = LAN_Server.LEASES.get(mac_addr)
         if not offered_ip:
             print(f"No offered IP for MAC {mac_addr}")
+            logging.warning(f"No offered IP for MAC {mac_addr}")
             return
 
         # Send DHCP Ack
@@ -100,6 +109,7 @@ class LAN_Server:
         packet = create_dhcp_packet(5, transaction_id, offered_ip, chaddr)  # 5 = Ack
         sock.sendto(packet, (offered_ip, LAN_Server.CLIENT_PORT))
         print(f"Acknowledged IP {offered_ip} for MAC {mac_addr}")
+        logging.info(f"Acknowledged IP {offered_ip} for MAC {mac_addr}")
 
     @staticmethod
     def _handle_dhcp_message(data, sock):
@@ -119,11 +129,14 @@ class LAN_Server:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.bind(('0.0.0.0', LAN_Server.SERVER_PORT))  # Bind to all available interfaces
         print(f"DHCP server running on {LAN_Server.SERVER_IP}:{LAN_Server.SERVER_PORT}")
+        logging.info(f"DHCP server running on {LAN_Server.SERVER_IP}:{LAN_Server.SERVER_PORT}")
 
         while True:
             try:
                 data, address = sock.recvfrom(1024)
                 print(f"Received packet from {address}")
+                logging.info(f"Received packet from {address}")
                 LAN_Server._handle_dhcp_message(data, sock)
             except Exception as e:
                 print(f"Error: {e}")
+                logging.error(f"Error: {e}")

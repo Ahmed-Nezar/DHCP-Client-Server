@@ -21,5 +21,5 @@ elif args.client:
 elif args.LAN:
     LAN_Server.start_dhcp_server()
 else:
-    print("You must specify either --server or --client")
+    print("You must specify either --server or --client or --LAN")
 

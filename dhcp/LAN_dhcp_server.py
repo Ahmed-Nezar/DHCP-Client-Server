@@ -1,7 +1,7 @@
 import socket
 import logging
 import os
-from ..config.config import Config
+from config.config import Config
 
 
 
@@ -157,7 +157,7 @@ class LAN_Server:
     @staticmethod
     def start_dhcp_server(args):
         """Start the DHCP server."""
-        Config.LEASE_TIME = args.lease_time if args.lease_time else Config.LEASE_TIME
+        Config.LEASE_TIME = int(args.lease_time) if args.lease_time else Config.LEASE_TIME
         LAN_Server.IP_POOL = LAN_Server.IP_POOL if not args.NAK else []
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

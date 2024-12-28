@@ -81,23 +81,6 @@ class LAN_Server:
                 file.write(ip + "\n")
             
     
-    # @staticmethod
-    # def _parse_dhcp_packet(data):
-    #     """Parse the incoming DHCP packet."""
-    #     transaction_id = struct.unpack("!I", data[4:8])[0]
-    #     mac_addr = ':'.join(f"{b:02x}" for b in data[28:34])
-    #     options = data[240:]  # Options start at byte 240
-    #     msg_type = None
-
-    #     # Parse options to find message type
-    #     i = 0
-    #     while i < len(options):
-    #         if options[i] == 53:  # Option 53: Message Type
-    #             msg_type = options[i + 2]
-    #             break
-    #         i += 2 + options[i + 1]
-    #     return transaction_id, mac_addr, msg_type
-    
     @staticmethod
     def _parse_dhcp_packet(data):
         """Parse the incoming DHCP packet."""

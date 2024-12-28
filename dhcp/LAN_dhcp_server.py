@@ -194,6 +194,7 @@ class LAN_Server:
         print(f"DHCP server running on IP({LAN_Server.SERVER_IP}) PORT({LAN_Server.SERVER_PORT})")
         logging.info(f"DHCP server running on IP({LAN_Server.SERVER_IP}) PORT({LAN_Server.SERVER_PORT})")
         LAN_Server._write_ip_pool_to_file()
+        LAN_Server._read_ip_pool()
 
         while True:
             try:

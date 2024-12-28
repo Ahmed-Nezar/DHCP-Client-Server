@@ -123,6 +123,10 @@ class LAN_Server:
             print("No available IPs in the pool!")
             logging.warning("No available IPs in the pool!")
             return
+
+        if requested_ip not in LAN_Server.available_ip_pool:
+            requested_ip = None
+            
         offered_ip = offered_ip if requested_ip is None else requested_ip
         
         # Send DHCP Offer

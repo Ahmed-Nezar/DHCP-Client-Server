@@ -151,7 +151,7 @@ class LAN_Server:
         # Send DHCP Ack
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
         packet = create_dhcp_packet(5, transaction_id, offered_ip, chaddr)  # 5 = Ack
-        sock.sendto(packet, (offered_ip, LAN_Server.CLIENT_PORT))
+        sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
         print(f"Acknowledged IP {offered_ip} for MAC {mac_addr}")
         logging.info(f"Acknowledged IP {offered_ip} for MAC {mac_addr}")
         try:

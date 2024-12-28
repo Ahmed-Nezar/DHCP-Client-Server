@@ -6,11 +6,11 @@ from dhcp.LAN_dhcp_server import LAN_Server
 
 # Initialize the argument parser
 parser = argparse.ArgumentParser(description="Run a DHCP server or client")
-parser.add_argument('--server', action='store_true', help="Run the DHCP server")
-parser.add_argument('--client', action='store_true', help="Run the DHCP client")
-parser.add_argument('--LAN', action='store_true', help="Run the DHCP LAN server")
+parser.add_argument('--server', action='store_true', help="Run the DHCP server", default=None)
+parser.add_argument('--client', action='store_true', help="Run the DHCP client", default=None)
+parser.add_argument('--LAN', action='store_true', help="Run the DHCP LAN server", default=None)
 parser.add_argument('--lease-time', action='store', help="Enable debug mode", default=None)
-parser.add_argument('--NAK', action='store_true', help="Enable debug mode")
+parser.add_argument('--NAK', action='store_true', help="Enable debug mode", default=None)
 
 # Parse the arguments
 args = parser.parse_args()

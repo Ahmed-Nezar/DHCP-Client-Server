@@ -1,6 +1,4 @@
 import argparse
-from dhcp.dhcp_client import Client
-from dhcp.dhcp_server import Server
 from dhcp.LAN_dhcp_server import LAN_Server
 
 
@@ -17,8 +15,10 @@ args = parser.parse_args()
 
 # Check which flag was passed and start the corresponding process
 if args.server:
+    from dhcp.dhcp_server import Server
     Server.start_server()
 elif args.client:
+    from dhcp.dhcp_client import Client
     Client.start_client()
 elif args.LAN:
     LAN_Server.start_dhcp_server(args)

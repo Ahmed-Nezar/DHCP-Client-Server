@@ -11,7 +11,7 @@ logging.basicConfig(filename=log_path, level=logging.INFO, format='%(asctime)s -
 SERVER_IP = "192.168.1.1"
 SUBNET_MASK = "255.255.255.0"
 DNS_SERVER = SERVER_IP
-LEASE_TIME = 86400
+LEASE_TIME = 86400  # 1 day
 MAGIC_COOKIE = b'\x63\x82\x53\x63'
 
 def create_dhcp_packet(message_type, xid, yiaddr, chaddr):
@@ -52,7 +52,7 @@ class LAN_Server:
     SERVER_IP = "192.168.1.1"
     SERVER_PORT = 67
     CLIENT_PORT = 68
-    IP_POOL = [f"192.168.1.{i}" for i in range(10, 51)]  # IP pool from 192.168.1.10 to 192.168.1.50
+    IP_POOL = [f"192.168.1.{i}" for i in range(13, 51)]  # IP pool from 192.168.1.10 to 192.168.1.50
     LEASES = {}  # Store client leases {MAC: IP}
     base_dir = os.path.dirname(__file__)
     ip_pool_dir = os.path.join(base_dir, "ip_pool.txt")
@@ -132,7 +132,6 @@ class LAN_Server:
         # Send DHCP Offer
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
         packet = create_dhcp_packet(2, transaction_id, offered_ip, chaddr)  # 2 = Offer
-        LAN_Server.LEASES[mac_addr] = offered_ip
         sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
         print(f"Offered IP {offered_ip} to MAC {mac_addr}")
         logging.info(f"Offered IP {offered_ip} to MAC {mac_addr}")
@@ -155,7 +154,12 @@ class LAN_Server:
         # Send DHCP Ack
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
         packet = create_dhcp_packet(5, transaction_id, offered_ip, chaddr)  # 5 = Ack
-        sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
+        if offered_ip not in LAN_Server.LEASES.values():
+            sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
+        else:
+            sock.sendto(packet, (offered_ip, LAN_Server.CLIENT_PORT))
+            
+        LAN_Server.LEASES[mac_addr] = offered_ip
         print(f"Acknowledged IP {offered_ip} for MAC {mac_addr}")
         logging.info(f"Acknowledged IP {offered_ip} for MAC {mac_addr}")
         try:

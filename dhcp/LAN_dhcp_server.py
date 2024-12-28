@@ -80,6 +80,12 @@ class LAN_Server:
         if not offered_ip:
             print("No available IPs in the pool!")
             logging.warning("No available IPs in the pool!")
+            # Send DHCP NAK
+            chaddr = bytes.fromhex(mac_addr.replace(":", ""))
+            nak_packet = Config.create_dhcp_packet(6, transaction_id, "0.0.0.0", chaddr)  # 6 = NAK
+            sock.sendto(nak_packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
+            print(f"Sent NAK to MAC {mac_addr}")
+            logging.info(f"Sent NAK to MAC {mac_addr}")
             return
 
         if requested_ip not in LAN_Server.available_ip_pool:

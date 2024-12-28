@@ -111,7 +111,7 @@ class LAN_Server:
 
 
     @staticmethod
-    def _handle_discover(transaction_id, mac_addr, sock):
+    def _handle_discover(transaction_id, mac_addr, sock, requested_ip):
         """Handle DHCP Discover."""
         print(f"Handling Discover for MAC: {mac_addr}")
         logging.info(f"Handling Discover for MAC: {mac_addr}")
@@ -123,6 +123,7 @@ class LAN_Server:
             print("No available IPs in the pool!")
             logging.warning("No available IPs in the pool!")
             return
+        offered_ip = offered_ip if requested_ip is None else requested_ip
         
         # Send DHCP Offer
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
@@ -153,7 +154,11 @@ class LAN_Server:
         sock.sendto(packet, (offered_ip, LAN_Server.CLIENT_PORT))
         print(f"Acknowledged IP {offered_ip} for MAC {mac_addr}")
         logging.info(f"Acknowledged IP {offered_ip} for MAC {mac_addr}")
-        LAN_Server.available_ip_pool.remove(offered_ip)
+        try:
+            LAN_Server.available_ip_pool.remove(offered_ip)
+        except:
+            print(f"IP {offered_ip} not in the pool")
+            logging.warning(f"IP {offered_ip} not in the pool")
         LAN_Server._write_ip_to_ip_pool_file(LAN_Server.available_ip_pool)
 
     @staticmethod 
@@ -175,7 +180,7 @@ class LAN_Server:
         # Parse the received packet
         transaction_id, mac_addr, msg_type, requested_ip = LAN_Server._parse_dhcp_packet(data)
         if msg_type == 1:  # Discover   
-            LAN_Server._handle_discover(transaction_id, mac_addr, sock)
+            LAN_Server._handle_discover(transaction_id, mac_addr, sock, requested_ip)
         elif msg_type == 3:  # Request
             LAN_Server._handle_request(transaction_id, mac_addr, sock, requested_ip)
         elif msg_type == 7: # Handling DHCP Release

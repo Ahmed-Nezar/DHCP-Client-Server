@@ -1,58 +1,16 @@
 import socket
-import struct
 import logging
 import os
+from ..config.config import Config
 
-# Configure logging
-log_path = os.path.join(os.path.dirname(__file__), 'server.log')
-logging.basicConfig(filename=log_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Constants
-SERVER_IP = "192.168.1.1"
-SUBNET_MASK = "255.255.255.0"
-DNS_SERVER = SERVER_IP
-LEASE_TIME = 86400  # 1 day
-MAGIC_COOKIE = b'\x63\x82\x53\x63'
-
-def create_dhcp_packet(message_type, xid, yiaddr, chaddr):
-    """Create a DHCP packet."""
-    packet = struct.pack(
-        '!BBBBIHHIIII16s192x',
-        2, 1, 6, 0, xid, 0, 0x8000,
-        0, struct.unpack("!I", socket.inet_aton(yiaddr))[0],
-        struct.unpack("!I", socket.inet_aton(SERVER_IP))[0], 0,
-        chaddr.ljust(16, b'\x00')
-    )
-
-    # Add Magic Cookie
-    packet += MAGIC_COOKIE
-
-    # DHCP Options
-    options = [
-        (53, 1, bytes([message_type])),
-        (54, 4, socket.inet_aton(SERVER_IP)),
-        (51, 4, LEASE_TIME.to_bytes(4, 'big')),
-        (1, 4, socket.inet_aton(SUBNET_MASK)),
-        (3, 4, socket.inet_aton(SERVER_IP)),
-        (6, 4, socket.inet_aton(DNS_SERVER)),
-    ]
-
-    for option in options:
-        option_type, option_length, option_value = option
-        packet += struct.pack(f"!BB{len(option_value)}s", option_type, option_length, option_value)
-
-    packet += struct.pack("B", 255)  # End Option
-    while len(packet) % 4 != 0:
-        packet += b'\x00'
-
-    return packet
 
 class LAN_Server:
     # Server configuration
     SERVER_IP = "192.168.1.1"
     SERVER_PORT = 67
     CLIENT_PORT = 68
-    IP_POOL = [f"192.168.1.{i}" for i in range(13, 51)]  # IP pool from 192.168.1.10 to 192.168.1.50
+    IP_POOL = [f"192.168.1.{i}" for i in range(10, 51)]  # IP pool from 192.168.1.10 to 192.168.1.50
     LEASES = {}  # Store client leases {MAC: IP}
     base_dir = os.path.dirname(__file__)
     ip_pool_dir = os.path.join(base_dir, "ip_pool.txt")
@@ -131,7 +89,7 @@ class LAN_Server:
         
         # Send DHCP Offer
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-        packet = create_dhcp_packet(2, transaction_id, offered_ip, chaddr)  # 2 = Offer
+        packet = Config.create_dhcp_packet(2, transaction_id, offered_ip, chaddr)  # 2 = Offer
         sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
         print(f"Offered IP {offered_ip} to MAC {mac_addr}")
         logging.info(f"Offered IP {offered_ip} to MAC {mac_addr}")
@@ -153,7 +111,7 @@ class LAN_Server:
 
         # Send DHCP Ack
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-        packet = create_dhcp_packet(5, transaction_id, offered_ip, chaddr)  # 5 = Ack
+        packet = Config.create_dhcp_packet(5, transaction_id, offered_ip, chaddr)  # 5 = Ack
         if offered_ip not in LAN_Server.LEASES.values():
             sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
         else:
@@ -197,8 +155,10 @@ class LAN_Server:
             logging.warning("Unknown DHCP message type")
 
     @staticmethod
-    def start_dhcp_server():
+    def start_dhcp_server(args):
         """Start the DHCP server."""
+        Config.LEASE_TIME = args.lease_time if args.lease_time else Config.LEASE_TIME
+        LAN_Server.IP_POOL = LAN_Server.IP_POOL if not args.NAK else []
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

@@ -1,9 +1,11 @@
 import socket
 import struct
 import logging
+import os
 
 # Configure logging
-logging.basicConfig(filename='d:/ASU/Fall24/Networks/project/DHCP-Client-Server/dhcp/server.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log_path = os.path.join(os.path.dirname(__file__), 'server.log')
+logging.basicConfig(filename=log_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Constants
 SERVER_IP = "192.168.1.1"

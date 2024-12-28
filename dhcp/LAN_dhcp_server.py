@@ -177,7 +177,7 @@ class LAN_Server:
         if msg_type == 1:  # Discover   
             LAN_Server._handle_discover(transaction_id, mac_addr, sock)
         elif msg_type == 3:  # Request
-            LAN_Server._handle_request(transaction_id, mac_addr, sock)
+            LAN_Server._handle_request(transaction_id, mac_addr, sock, requested_ip)
         elif msg_type == 7: # Handling DHCP Release
             LAN_Server._handle_dhcp_release(mac_addr)
         else:

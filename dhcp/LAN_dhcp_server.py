@@ -70,12 +70,14 @@ class LAN_Server:
 
 
     @staticmethod
-    def _handle_discover(mac_addr):
+    def _handle_discover(transaction_id, mac_addr, sock, requested_ip):
         """Handle DHCP Discover."""
         print(f"Handling Discover for MAC: {mac_addr}")
         logging.info(f"Handling Discover for MAC: {mac_addr}")
         # Assign the first available IP
         LAN_Server.offered_ip = next((ip for ip in LAN_Server.available_ip_pool if ip not in LAN_Server.LEASES.values()), None)
+        
+        LAN_Server._send_dhcp_message(2, transaction_id, mac_addr, sock, requested_ip)
         
 
 
@@ -110,7 +112,7 @@ class LAN_Server:
         
 
     @staticmethod
-    def _handle_request(mac_addr, requested_ip):
+    def _handle_request(transaction_id, mac_addr, sock, requested_ip):
         """Handle DHCP Request."""
         print(f"Handling Request for MAC: {mac_addr}")
         logging.info(f"Handling Request for MAC: {mac_addr}")
@@ -122,6 +124,10 @@ class LAN_Server:
         if not LAN_Server.offered_ip:
             print(f"No offered IP for MAC {mac_addr}")
             logging.warning(f"No offered IP for MAC {mac_addr}")
+            LAN_Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip)
+        else:
+            LAN_Server._send_dhcp_message(5, transaction_id, mac_addr, sock, requested_ip)
+        
     
     @staticmethod
     def _handle_ACK(msg_type, transaction_id, mac_addr, sock):
@@ -174,26 +180,34 @@ class LAN_Server:
         # Parse the received packet
         transaction_id, mac_addr, msg_type, requested_ip = LAN_Server._parse_dhcp_packet(data)
         if msg_type == 1:  # Discover   
-            LAN_Server._handle_discover(mac_addr)
-        elif msg_type == 2:  # Offer
-            LAN_Server._handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr)
+            LAN_Server._handle_discover(transaction_id,mac_addr, sock, requested_ip)
         
         elif msg_type == 3:  # Request
-            LAN_Server._handle_request(mac_addr, requested_ip)
+            LAN_Server._handle_request(transaction_id, mac_addr, sock, requested_ip)
         
         elif msg_type == 4:  # Decline
             LAN_Server._handle_decline(mac_addr)
         
-        elif msg_type == 5:  # Ack
-            LAN_Server._handle_ACK(msg_type, transaction_id, mac_addr, sock)
-        
-        elif msg_type == 6:  # Nak
-            LAN_Server._handle_NAK(msg_type, transaction_id, mac_addr, sock)
-        
         elif msg_type == 7: # Handling DHCP Release
             LAN_Server._handle_dhcp_release(mac_addr)
+            
+        else:
+            print("Unknown DHCP message type")
+            logging.warning("Unknown DHCP message type")
+    
+    @staticmethod
+    def _send_dhcp_message(msg_type, transaction_id, mac_addr, sock, requested_ip):
         
-        elif msg_type == 8:  # Inform
+        if msg_type == 2:
+            LAN_Server._handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr)
+        
+        elif msg_type == 5:
+            LAN_Server._handle_ACK(msg_type, transaction_id, mac_addr, sock)
+        
+        elif msg_type == 6:
+            LAN_Server._handle_NAK(msg_type, transaction_id, mac_addr, sock)
+        
+        elif msg_type == 8:
             pass
         
         else:

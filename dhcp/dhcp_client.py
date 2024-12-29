@@ -1,8 +1,78 @@
 import socket
 import random
 import time
-from dhcp.utils import get_valid_ipv4
+from dhcp.utils import get_valid_ipv4, DHCPMessage
 import signal
+
+class DHCPClient:
+    def __init__(self, options):
+        self.options = options
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("0.0.0.0", 0))
+        self.server_ip = get_valid_ipv4()
+        self.tid = random.randint(1, 100000)
+
+    def send_discover(self):
+        print("Sending DHCP Discover...")
+        discover_msg = DHCPMessage(1, tid=self.tid)
+        for option, value in self.options.items():
+            print(f"Setting option {option} to {value}")
+            discover_msg.set_option(option, value)
+        self.sock.sendto(discover_msg.to_json().encode(), (self.server_ip, 67))
+
+    def send_request(self, offered_ip):
+        print(f"Sending DHCP Request for IP: {offered_ip}")
+        request_msg = DHCPMessage(3, tid=self.tid)
+        for option, value in self.options.items():
+            request_msg.set_option(option, value)
+        self.sock.sendto(request_msg.to_json().encode(), (self.server_ip, 67))
+
+    def release_ip(self, signum, frame):
+        print("Releasing IP...")
+        release_msg = DHCPMessage(7, tid=self.tid)
+        for option, value in self.options.items():
+            release_msg.set_option(option, value)
+        self.sock.sendto(release_msg.to_json().encode(), (self.server_ip, 67))
+        self.sock.close()
+        exit(0)
+
+    def _recieve_offer(self):
+        data, addr = self.sock.recvfrom(1024)
+        message = DHCPMessage.from_json(data.decode())
+        print(f"Received message: {message}")
+        if message.message_type == 2:
+            offered_ip = message.get_option(50)
+            print(f"Received offer: {offered_ip}")
+            self.send_request(offered_ip)
+        else:
+            print("Unexpected message received. Terminating connection.")
+
+
+    def _recieve_ack(self):
+        data, addr = self.sock.recvfrom(1024)
+        message = DHCPMessage.from_json(data.decode())
+        print(f"Received message: {message}")
+        if message.message_type == 5:
+            print("Received DHCP ACK. Lease obtained.")
+            self.sock.close()
+            exit(0)
+            
+        elif message.message_type == 6:
+            print("Received DHCP NAK. No IP address available. Terminating connection.")
+            self.sock.close()
+            exit(1)
+
+    def listen(self):        
+        try:
+            self.send_discover()
+            self._recieve_offer()
+            self._recieve_ack()
+
+
+        except Exception as e:
+            print(f"Error: {e}")
+
+
 
 class Client:
     

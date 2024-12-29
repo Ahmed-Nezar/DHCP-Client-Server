@@ -1,7 +1,102 @@
 import socket
 import threading
 import time
-from dhcp.utils import get_valid_ipv4
+import signal
+from dhcp.utils import get_valid_ipv4, DHCPMessage
+
+class DHCPServer:
+    def __init__(self, ip_pool):
+        self.ip_pool = ip_pool
+        self.server_ip = get_valid_ipv4()
+        self.leases = {}
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind((self.server_ip, 67))
+        self.blacklist_macs = [
+            "18:05:03:30:11:03",
+            "17:11:03:23:12:02"
+        ]
+        self.tids = set()
+
+    def handle_discover(self, addr, discover_msg):
+        
+        for option, value in discover_msg.options.items():
+            print(f"Option {option}: {value}")
+            print(f"Option using get option {option}: {discover_msg.get_option(option)}, type: {type(discover_msg.get_option(option))}")
+
+
+        client_id = discover_msg.get_option(61)
+        self.tids.add(discover_msg.tid)
+        
+        # if client_id is None:
+        #     print("Client Identifier (Option 61) is missing. Ignoring Discover message.")
+        #     return
+        print(f"Received DHCP Discover message from Client: {client_id}, TID: {discover_msg.tid}")
+
+        if client_id in self.blacklist_macs:
+            nak_msg = DHCPMessage(6)
+            self.sock.sendto(nak_msg.to_json().encode(), addr)
+            print(f"Blacklisted MAC address: {client_id}. Sending NAK...")
+            return
+
+        if len(self.ip_pool) == 0:
+            print("No available IP addresses. Sending NAK...")
+            nak_msg = DHCPMessage(6)
+            self.sock.sendto(nak_msg.to_json().encode(), addr)
+            return
+
+
+        offered_ip = self.ip_pool.pop(0)
+        offer_msg = DHCPMessage(2)
+        offer_msg.set_option(53, 2)
+        offer_msg.set_option(54, self.server_ip)
+        offer_msg.set_option(1, "255.255.255.0")
+        offer_msg.set_option(3, self.server_ip)
+        offer_msg.set_option(51, 3600)
+        offer_msg.set_option(50, offered_ip)
+
+        print(f"Offering IP: {offered_ip} to Client: {client_id}")
+        self.sock.sendto(offer_msg.to_json().encode(), addr)
+
+    def handle_request(self, addr, request_msg):
+        print("Received DHCP Request message...")
+
+
+        requested_ip = request_msg.get_option(50)
+        client_id = request_msg.get_option(61)
+
+        if requested_ip not in self.leases and requested_ip in self.ip_pool:
+            self.leases[client_id] = requested_ip
+            self.ip_pool.remove(requested_ip)
+
+        ack_msg = DHCPMessage(5)
+        ack_msg.set_option(53, 5)
+        ack_msg.set_option(54, self.server_ip)
+        ack_msg.set_option(1, "255.255.255.0")
+        ack_msg.set_option(3, self.server_ip)
+        ack_msg.set_option(51, 3600)
+        ack_msg.set_option(50, requested_ip)
+        print(f"Sending ACK for IP: {requested_ip} to Client: {client_id}")
+        self.sock.sendto(ack_msg.to_json().encode(), addr)
+
+    def shutdown(self, signum, frame):
+        print("Shutting down DHCP Server...")
+        self.sock.close()
+        exit(0)
+    def listen(self):
+        print("DHCP Server is running and listening on port 67...")
+        while True:
+            try:
+                data, addr = self.sock.recvfrom(1024)
+                message = DHCPMessage.from_json(data=data.decode())
+                if message.message_type == 1:
+                    self.handle_discover(addr, message)
+                elif message.message_type == 3:
+                    self.handle_request(addr, message)
+                # signal.signal(signal.SIGINT, self.shutdown)
+                # signal.signal(signal.SIGTERM, self.shutdown)
+            except Exception as e:
+                print(f"Error: {e}")
+                continue
 
 class Server:
     
@@ -179,5 +274,5 @@ class Server:
                     print(f"No lease found for TID: {tid}")
 
 # Print current lease table for debugging
-print(f"Current Lease Table: {Server.lease_table}")
-print('>' * 40)
+# print(f"Current Lease Table: {Server.lease_table}")
+# print('>' * 40)

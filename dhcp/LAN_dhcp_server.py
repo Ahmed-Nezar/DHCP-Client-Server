@@ -82,7 +82,7 @@ class LAN_Server:
             logging.warning("No available IPs in the pool!")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-            nak_packet = Config.create_dhcp_packet(6, transaction_id, "0.0.0.0", chaddr)  # 6 = NAK
+            nak_packet = Config.create_dhcp_packet(6, transaction_id, "0.0.0.0", chaddr, offered_ip)  # 6 = NAK
             sock.sendto(nak_packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
             print(f"Sent NAK to MAC {mac_addr}")
             logging.info(f"Sent NAK to MAC {mac_addr}")
@@ -95,7 +95,7 @@ class LAN_Server:
         
         # Send DHCP Offer
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-        packet = Config.create_dhcp_packet(2, transaction_id, offered_ip, chaddr)  # 2 = Offer
+        packet = Config.create_dhcp_packet(2, transaction_id, offered_ip, chaddr, offered_ip)  # 2 = Offer
         sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
         print(f"Offered IP {offered_ip} to MAC {mac_addr}")
         logging.info(f"Offered IP {offered_ip} to MAC {mac_addr}")
@@ -117,7 +117,7 @@ class LAN_Server:
 
         # Send DHCP Ack
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-        packet = Config.create_dhcp_packet(5, transaction_id, offered_ip, chaddr)  # 5 = Ack
+        packet = Config.create_dhcp_packet(5, transaction_id, offered_ip, chaddr, offered_ip)  # 5 = Ack
         if offered_ip not in LAN_Server.LEASES.values():
             sock.sendto(packet, ('<broadcast>', LAN_Server.CLIENT_PORT))
         else:

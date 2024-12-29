@@ -46,10 +46,10 @@ class Config:
             (11, 4, socket.inet_aton("192.168.1.8")),  # RLP Server
             (12, len("hostname"), b"hostname"),  # Hostname
             (15, len("domain.local"), b"domain.local"),  # Domain Name
-            (28, 4, socket.inet_aton("255.255.255.255")),  # Broadcast Address
+            (28, 4, socket.inet_aton("192.168.1.255")),  # Broadcast Address
             (50, 4, socket.inet_aton(offered_ip)),  # Requested IP Address
             (51, 4, cls.LEASE_TIME.to_bytes(4, 'big')),  # IP Address Lease Time
-            # (52, 1, b'\x01\x0f'),  # Option Overload
+            (52, 1, b'\x34\x00'),  # Option Overload
             (53, 1, bytes([message_type])),  # DHCP Message Type
             (54, 4, socket.inet_aton(cls.SERVER_IP)),  # DHCP Server Identifier
             (55, 4, b'\x01\x03\x06\x0f'),  # Parameter Request List

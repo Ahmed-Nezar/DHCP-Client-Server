@@ -23,7 +23,7 @@ def collect_user_input():
         "client_id": client_id,
         "requested_ip": requested_ip,
         "hostname": hostname,
-        "lease_time": lease_time,
+        "lease_time": int(lease_time) if lease_time else "",
         "parameter_request_list": parameter_request_list
     }
 

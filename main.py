@@ -1,5 +1,5 @@
 import argparse
-from dhcp.LAN_dhcp_server import LAN_Server
+from dhcp.dhcp_server import Server
 
 
 # Initialize the argument parser
@@ -21,7 +21,7 @@ elif args.client:
     from dhcp.dhcp_client import Client
     Client.start_client()
 elif args.LAN:
-    LAN_Server.start_dhcp_server(args)
+    Server.start_dhcp_server(args)
 else:
     print("You must specify either --server or --client or --LAN")
 

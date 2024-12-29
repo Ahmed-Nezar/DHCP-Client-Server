@@ -1,183 +1,239 @@
 import socket
-import threading
-import time
-from dhcp.utils import get_valid_ipv4
+import logging
+import os
+from config.config import Config
+
+
 
 class Server:
-    
-    lease_table = {}  # Stores the current leases
-    blacklist_macs = [
-        "18:05:03:30:11:03"
-    ]
-    discover_tids = set()  # Stores TIDs that have sent a Discover message
+    # Server configuration
+    SERVER_IP = "192.168.1.1"
+    SERVER_PORT = 67
+    CLIENT_PORT = 68
+    IP_POOL = [f"192.168.1.{i}" for i in range(10, 51)]  # IP pool from 192.168.1.10 to 192.168.1.50
+    LEASES = {}  # Store client leases {MAC: IP}
+    base_dir = os.path.dirname(__file__)
+    ip_pool_dir = os.path.join(base_dir, "ip_pool.txt")
+    available_ip_pool = []
+    offered_ip = None
+
+
+    @staticmethod
+    def _write_ip_pool_to_file():
+        """Write the IP pool to a file."""
+        with open(Server.ip_pool_dir, "w") as file:
+            for ip in Server.IP_POOL:
+                file.write(ip + "\n")
     
     @staticmethod
-    def _handle_discover(server_socket, client_address, ip_pool, lease_time, tid, mac_address):
-        print(f"Received DHCP Discover message with TID: {tid} and MAC address: {mac_address}")
+    def _read_ip_pool():
+        """Read the IP pool from a file."""
+        with open(Server.ip_pool_dir, "r") as file:
+            for line in file:
+                Server.available_ip_pool.append(line.strip())
+    
+    @staticmethod
+    def _write_ip_to_ip_pool_file(ip_address):
+        """Write the IP pool to a file."""
+        with open(Server.ip_pool_dir, "w") as file:
+            for ip in ip_address:
+                file.write(ip + "\n")
+            
+    
+    @staticmethod
+    def _parse_dhcp_packet(data):
+        """Parse the incoming DHCP packet."""
+        import struct
 
-        if mac_address in Server.blacklist_macs:
-            nak_message = f"DHCP Nak Blacklisted MAC {tid}".encode()
-            server_socket.sendto(nak_message, client_address)
-            print(f"Sent DHCP Nak to {client_address}: Blacklisted MAC with TID: {tid}")
-            return
-        
-        for value in Server.lease_table.values():
-            if value[2] == mac_address:
-                nak_message = f"DHCP Nak MAC Already Leased {tid}".encode()
-                server_socket.sendto(nak_message, client_address)
-                print(f"Sent DHCP Nak to {client_address}: MAC already leased with TID: {tid}")
-                return
+        # Extract transaction ID and MAC address
+        transaction_id = struct.unpack("!I", data[4:8])[0]
+        mac_addr = ':'.join(f"{b:02x}" for b in data[28:34])
+        options = data[240:]  # Options start at byte 240
 
-        available_ip = None
-        for ip in ip_pool:
-            if ip not in [entry[0] for entry in Server.lease_table.values()]:
-                available_ip = ip
+        msg_type = None
+        requested_ip = None
+
+        # Parse options to find message type and requested IP
+        i = 0
+        while i < len(options):
+            option_type = options[i]
+            if option_type == 255:  # Option 255: End of options
                 break
+            length = options[i + 1]
+            if option_type == 53:  # Option 53: DHCP Message Type
+                msg_type = options[i + 2]
+            elif option_type == 50:  # Option 50: Requested IP Address
+                requested_ip = '.'.join(map(str, options[i + 2:i + 2 + length]))
+            i += 2 + length
 
-        if available_ip is None:
-            nak_message = f"DHCP Nak No Available IPs {tid}".encode()
-            server_socket.sendto(nak_message, client_address)
-            print(f"Sent DHCP Nak to {client_address}: No available IPs with TID: {tid}")
-            return
-        
-        # Offer the available IP
-        c_address = ("0.0.0.0", 68)
-        offer_message = f"DHCPOffer {available_ip} {tid} LeaseTime {lease_time} {client_address}".encode()
-        server_socket.sendto(offer_message, client_address)
-        print(f"Sent DHCP Offer with IP: {available_ip} to {c_address} with TID: {tid} and MAC: {mac_address}")
+        return transaction_id, mac_addr, msg_type, requested_ip
 
-        # Add TID to discover_tids set
-        Server.discover_tids.add(tid)
 
     @staticmethod
-    def _handle_request(server_socket, client_address, data, ip_pool, lease_time):
-        parts = data.decode().split(" ")
-        requested_ip = parts[2]
-        tid = parts[3]
-        mac_address = parts[4]
-        c_address = ("0.0.0.0", 68)
-        print(f"Received DHCP Request for IP: {requested_ip} with TID: {tid} and MAC address: {mac_address}")
-
-        # Check if the TID is in the discover_tids set
-        if tid not in Server.discover_tids:
-            nak_message = f"DHCP Nak No Prior Discover {tid}".encode()
-            server_socket.sendto(nak_message, client_address)
-            print(f"Sent DHCP Nak to {client_address}: No prior Discover message with TID: {tid}")
-            return
-
-        if requested_ip not in ip_pool:
-            nak_message = f"DHCP Nak Invalid IP {tid}".encode()
-            server_socket.sendto(nak_message, client_address)
-            print(f"Sent DHCP Nak to {c_address}: Invalid IP requested with TID: {tid}")
-            return
-
-        # Handle DHCP Decline
-        if parts[0] == "DHCP" and parts[1] == "Decline":
-            print(f"Received DHCP Decline message with TID: {tid}, MAC address: {mac_address}, and desired lease time: {lease_time}")
-            if tid in Server.lease_table:
-                del Server.lease_table[tid]
-                print(f"Removed declined offer for TID: {tid} and MAC address: {mac_address}")
-            return
+    def _handle_discover(transaction_id, mac_addr, sock, requested_ip):
+        """Handle DHCP Discover."""
+        print(f"Handling Discover for MAC: {mac_addr}")
+        logging.info(f"Handling Discover for MAC: {mac_addr}")
+        # Assign the first available IP
+        Server.offered_ip = next((ip for ip in Server.available_ip_pool if ip not in Server.LEASES.values()), None)
         
-        # Existing handling for DHCP Request
-        lease_entry = Server.lease_table.get(tid)
-        if lease_entry:
-            leased_ip, _, _ = lease_entry
-            if leased_ip == requested_ip:
-                Server.lease_table[tid] = (requested_ip, lease_time, mac_address)
-                ack_message = f"DHCP Acknowledge {requested_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
-                server_socket.sendto(ack_message, client_address)
-                print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {requested_ip} with TID: {tid} and MAC: {mac_address}")
-                return
-            else:
-                nak_message = f"DHCP Nak IP Mismatch {tid}".encode()
-                server_socket.sendto(nak_message, client_address)
-                print(f"Sent DHCP Nak to {client_address}: IP mismatch with TID: {tid}")
-                return
+        Server._send_dhcp_message(2, transaction_id, mac_addr, sock, requested_ip)
+        
 
-        # Handle New Lease Request
-        if any(entry[0] == requested_ip for entry in Server.lease_table.values()):
-            nak_message = f"DHCP Nak IP Already Leased {tid}".encode()
-            server_socket.sendto(nak_message, client_address)
-            print(f"Sent DHCP Nak to {c_address}: IP already leased with TID: {tid}")
-            return
-
-        Server.lease_table[tid] = (requested_ip, lease_time, mac_address)
-        ack_message = f"DHCP Acknowledge {requested_ip} {tid} LeaseTime {lease_time} {mac_address}".encode()
-        server_socket.sendto(ack_message, client_address)
-        print(f"Sent DHCP Acknowledge for IP: {requested_ip} to {requested_ip} with TID: {tid} and MAC: {mac_address}")
 
     @staticmethod
-    def _decrement_lease_times():
-        while True:
-            time.sleep(1)
-            for tid, entry in list(Server.lease_table.items()):
-                lease_time = entry[1]
-                if lease_time <= 0:
-                    del Server.lease_table[tid]
-                else:
-                    Server.lease_table[tid] = (entry[0], lease_time - 1, entry[2])
-            if Server.lease_table:
-                print(f"Lease Table: {Server.lease_table}")
+    def _handle_NAK(msg_type, transaction_id, mac_addr, sock):
+        if not Server.offered_ip:
+            print("No available IPs in the pool!")
+            logging.warning("No available IPs in the pool!")
+            # Send DHCP NAK
+            chaddr = bytes.fromhex(mac_addr.replace(":", ""))
+            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, "0.0.0.0", chaddr, Server.offered_ip)  # 6 = NAK
+            sock.sendto(nak_packet, ('<broadcast>', Server.CLIENT_PORT))
+            print(f"Sent NAK to MAC {mac_addr}")
+            logging.info(f"Sent NAK to MAC {mac_addr}")
+        
     
     @staticmethod
-    def start_server():
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ipv4_address = get_valid_ipv4()
-        server_address = (ipv4_address, 67)
-        server_socket.bind(server_address)
-
-        print("DHCP Server is running and listening on port 67...")
-
-        ip_pool = ["192.168.1." + str(i) for i in range(100, 103)]
-        lease_time = 10  # Lease time in seconds
+    def _handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr):
         
-        lease_thread = threading.Thread(target=Server._decrement_lease_times)
-        lease_thread.daemon = True 
-        lease_thread.start()
+        if requested_ip not in Server.available_ip_pool:
+            requested_ip = None
+        
+            
+        Server.offered_ip = Server.offered_ip if requested_ip is None else requested_ip
+        
+        # Send DHCP Offer
+        chaddr = bytes.fromhex(mac_addr.replace(":", ""))
+        packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip)  # 2 = Offer
+        sock.sendto(packet, ('<broadcast>', Server.CLIENT_PORT))
+        print(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
+        logging.info(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
+        
+
+    @staticmethod
+    def _handle_request(transaction_id, mac_addr, sock, requested_ip):
+        """Handle DHCP Request."""
+        print(f"Handling Request for MAC: {mac_addr}")
+        logging.info(f"Handling Request for MAC: {mac_addr}")
+
+        if requested_ip not in Server.available_ip_pool:
+            requested_ip = None
+        # Get the offered IP
+        Server.offered_ip = Server.LEASES.get(mac_addr) if requested_ip is None else requested_ip
+        if not Server.offered_ip:
+            print(f"No offered IP for MAC {mac_addr}")
+            logging.warning(f"No offered IP for MAC {mac_addr}")
+            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip)
+        else:
+            Server._send_dhcp_message(5, transaction_id, mac_addr, sock, requested_ip)
+        
+    
+    @staticmethod
+    def _handle_ACK(msg_type, transaction_id, mac_addr, sock):
+        # Send DHCP Ack
+        chaddr = bytes.fromhex(mac_addr.replace(":", ""))
+        packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip)  # 5 = Ack
+        if Server.offered_ip not in Server.LEASES.values():
+            sock.sendto(packet, ('<broadcast>', Server.CLIENT_PORT))
+        else:
+            sock.sendto(packet, (Server.offered_ip, Server.CLIENT_PORT))
+            
+        Server.LEASES[mac_addr] = Server.offered_ip
+        print(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
+        logging.info(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
+        try:
+            Server.available_ip_pool.remove(Server.offered_ip)
+        except:
+            pass
+        Server._write_ip_to_ip_pool_file(Server.available_ip_pool)
+
+    @staticmethod 
+    def _handle_dhcp_release(mac_addr):
+        """Handle DHCP Release."""
+        print(f"Handling Release for MAC: {mac_addr}")
+        logging.info(f"Handling Release for MAC: {mac_addr}")
+        ip_address = Server.LEASES.get(mac_addr)
+        if ip_address:
+            Server.LEASES.pop(mac_addr)
+            Server.available_ip_pool.append(ip_address)
+            Server._write_ip_to_ip_pool_file(Server.available_ip_pool)
+            print(f"Released IP {ip_address} for MAC {mac_addr}")
+            logging.info(f"Released IP {ip_address} for MAC {mac_addr}")
+    
+    @staticmethod
+    def _handle_decline(mac_addr):
+        """Handle DHCP Decline."""
+        print(f"Handling Decline for MAC: {mac_addr}")
+        logging.info(f"Handling Decline for MAC: {mac_addr}")
+        ip_address = Server.LEASES.get(mac_addr)
+        if ip_address:
+            Server.LEASES.pop(mac_addr)
+            Server.available_ip_pool.append(ip_address)
+            Server._write_ip_to_ip_pool_file(Server.available_ip_pool)
+            print(f"Declined IP {ip_address} for MAC {mac_addr}")
+            logging.info(f"Declined IP {ip_address} for MAC {mac_addr}")
+    
+    @staticmethod
+    def _handle_dhcp_message(data, sock):
+        """Parse DHCP message and determine the phase."""
+        # Parse the received packet
+        transaction_id, mac_addr, msg_type, requested_ip = Server._parse_dhcp_packet(data)
+        if msg_type == 1:  # Discover   
+            Server._handle_discover(transaction_id,mac_addr, sock, requested_ip)
+        
+        elif msg_type == 3:  # Request
+            Server._handle_request(transaction_id, mac_addr, sock, requested_ip)
+        
+        elif msg_type == 4:  # Decline
+            Server._handle_decline(mac_addr)
+        
+        elif msg_type == 7: # Handling DHCP Release
+            Server._handle_dhcp_release(mac_addr)
+            
+        else:
+            print("Unknown DHCP message type")
+            logging.warning("Unknown DHCP message type")
+    
+    @staticmethod
+    def _send_dhcp_message(msg_type, transaction_id, mac_addr, sock, requested_ip):
+        
+        if msg_type == 2:
+            Server._handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr)
+        
+        elif msg_type == 5:
+            Server._handle_ACK(msg_type, transaction_id, mac_addr, sock)
+        
+        elif msg_type == 6:
+            Server._handle_NAK(msg_type, transaction_id, mac_addr, sock)
+        
+        elif msg_type == 8:
+            pass
+        
+        else:
+            print("Unknown DHCP message type")
+            logging.warning("Unknown DHCP message type")
+
+    @staticmethod
+    def start_dhcp_server(args):
+        """Start the DHCP server."""
+        Config.LEASE_TIME = int(args.lease_time) if args.lease_time else Config.LEASE_TIME
+        Server.IP_POOL = Server.IP_POOL if not args.NAK else []
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.bind(('0.0.0.0', Server.SERVER_PORT))  # Bind to all available interfaces
+        print(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
+        logging.info(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
+        Server._write_ip_pool_to_file()
+        Server._read_ip_pool()
 
         while True:
-            data, client_address = server_socket.recvfrom(1024)
-            parts = data.decode(errors='ignore').split(" ")
-
-            # Handling DHCP Discover message
-            if parts[0] == "DHCP" and parts[1] == "Discover":
-                tid = parts[2]
-                mac_address = parts[3]
-                Server._handle_discover(server_socket, client_address, ip_pool, lease_time, tid, mac_address)
-
-            # Handling DHCP Request message
-            elif parts[0] == "DHCP" and parts[1] == "Request":
-                Server._handle_request(server_socket, client_address, data, ip_pool, lease_time)
-
-            # Handling DHCP Decline message
-            elif parts[0] == "DHCP" and parts[1] == "Decline":
-                tid = parts[3]
-                mac_address = parts[4]
-                desired_lease_time = parts[5]
-                print(f"Received DHCP Decline message with TID: {tid}, MAC address: {mac_address}, and desired lease time: {desired_lease_time}")
-                if tid in Server.lease_table:
-                    del Server.lease_table[tid]
-                    print(f"Removed declined offer for TID: {tid} and MAC address: {mac_address}")
-
-            # Handling DHCP Release message
-            elif parts[0] == "DHCP" and parts[1] == "Release":
-                offered_ip = parts[2]  # Extract the offered IP
-                tid = parts[3]         # Extract the TID
-                mac_address = parts[4] # Extract the MAC address
-                print(f"Received DHCP Release for IP: {offered_ip}, TID: {tid}, MAC: {mac_address}")
-
-                # Check if the TID exists in the lease table
-                if tid in Server.lease_table:
-                    leased_ip, _, leased_mac = Server.lease_table[tid]
-                    if leased_ip == offered_ip and leased_mac == mac_address:
-                        del Server.lease_table[tid]
-                        print(f"Released IP: {leased_ip} for TID: {tid} and MAC: {mac_address}")
-                    else:
-                        print(f"Mismatch for TID: {tid}. Expected IP: {leased_ip}, MAC: {leased_mac}, Received IP: {offered_ip}, MAC: {mac_address}")
-                else:
-                    print(f"No lease found for TID: {tid}")
-
-# Print current lease table for debugging
-print(f"Current Lease Table: {Server.lease_table}")
-print('>' * 40)
+            try:
+                data, address = sock.recvfrom(1024)
+                print(f"Received packet from {address}")
+                logging.info(f"Received packet from {address}")
+                Server._handle_dhcp_message(data, sock)
+            except Exception as e:
+                print(f"Error: {e}")
+                logging.error(f"Error: {e}")

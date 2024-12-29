@@ -1,5 +1,5 @@
 import argparse
-from dhcp.LAN_dhcp_server import LAN_Server
+from dhcp.dhcp_server import Server
 
 
 # Initialize the argument parser
@@ -48,7 +48,7 @@ def collect_user_input():
 
 # Check which flag was passed and start the corresponding process
 if args.server:
-    LAN_Server.start_dhcp_server(args)
+    Server.start_dhcp_server(args)
 elif args.client:
     from client.virtual_client import DHCP_Client
     client_options = collect_user_input()

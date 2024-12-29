@@ -6,7 +6,6 @@ from dhcp.LAN_dhcp_server import LAN_Server
 parser = argparse.ArgumentParser(description="Run a DHCP server or client")
 parser.add_argument('--server', action='store_true', help="Run the DHCP server", default=None)
 parser.add_argument('--client', action='store_true', help="Run the DHCP client", default=None)
-parser.add_argument('--LAN', action='store_true', help="Run the DHCP LAN server", default=None)
 parser.add_argument('--lease-time', action='store', help="Enable debug mode", default=None)
 parser.add_argument('--NAK', action='store_true', help="Enable debug mode", default=None)
 
@@ -49,16 +48,12 @@ def collect_user_input():
 
 # Check which flag was passed and start the corresponding process
 if args.server:
-    from dhcp.dhcp_server import DHCPServer
-    server = DHCPServer(ip_pool=["192.168.1.100", "192.168.1.101", "192.168.1.102"])
-    server.listen()
-elif args.client:
-    from dhcp.dhcp_client import DHCPClient
-    client_options = collect_user_input()
-    client = DHCPClient(options=client_options)
-    client.listen()
-elif args.LAN:
     LAN_Server.start_dhcp_server(args)
+elif args.client:
+    from client.virtual_client import DHCP_Client
+    client_options = collect_user_input()
+    client = DHCP_Client(options=client_options)
+    client.listen()
 else:
     print("You must specify either --server or --client or --LAN")
 

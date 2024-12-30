@@ -9,7 +9,7 @@ from config.config import Config
 
 class Server:
     # Server configuration
-    SERVER_IP = "192.168.1.1"
+    SERVER_IP = socket.gethostbyname(socket.gethostname())
     SERVER_PORT = 67
     CLIENT_PORT = 68
     IP_POOL = [f"192.168.1.{i}" for i in range(10, 51)]  # IP pool from 192.168.1.10 to 192.168.1.50
@@ -136,7 +136,7 @@ class Server:
 
     @staticmethod
     def _handle_NAK(msg_type, transaction_id, mac_addr, sock, lease_time):
-        if Server.blocked_MAC:
+        if Server.blocked_MAC is not None and mac_addr in Server.blocked_MAC:
             print(f"MAC {mac_addr} is blocked!")
             logging.warning(f"MAC {mac_addr} is blocked!")
             # Send DHCP NAK
@@ -262,6 +262,17 @@ class Server:
 
         print(f"Declined IP {Server.offered_ip} for MAC {mac_addr}")
         logging.info(f"Declined IP {Server.offered_ip} for MAC {mac_addr}")
+
+    @staticmethod
+    def _handle_dhcp_inform(transaction_id , mac_addr, sock, requested_ip, lease_time):
+        """Handle DHCP Inform."""
+        print(f"Handling INFORM for MAC: {mac_addr}")
+        logging.info(f"Handling INFORM for MAC: {mac_addr}")
+        Server.offered_ip = "0.0.0.0"
+        Server._send_dhcp_message(5, transaction_id, mac_addr, sock, Server.SERVER_IP, lease_time)
+        
+            
+
     
     @staticmethod
     def _handle_dhcp_message(data, sock):
@@ -281,7 +292,7 @@ class Server:
             Server._handle_dhcp_release(mac_addr)
 
         elif msg_type == 8: # Handling DHCP Inform
-            pass
+            Server._handle_dhcp_inform(transaction_id, mac_addr, sock, requested_ip, lease_time)
             
         else:
             print("Unknown DHCP message type")
@@ -289,7 +300,6 @@ class Server:
     
     @staticmethod
     def _send_dhcp_message(msg_type, transaction_id, mac_addr, sock, requested_ip, lease_time):
-        
         if msg_type == 2: # Offer
             Server._handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr, lease_time)
         

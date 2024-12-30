@@ -179,7 +179,7 @@ class DHCP_Client:
         sock.bind(("0.0.0.0", DHCP_Client.CLIENT_PORT))
 
         transaction_id = DHCP_Client.generate_transaction_id()
-        mac_address = config['client_id'] if config['client_id'] else DHCP_Client.generate_mac_address()
+        mac_address = config.get("client_id") or DHCP_Client.generate_mac_address()
 
         # Send DHCP Discover
         discover_packet = DHCP_Client.create_dhcp_discover(transaction_id, mac_address)

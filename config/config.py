@@ -18,8 +18,10 @@ class Config:
     MAGIC_COOKIE = b'\x63\x82\x53\x63'
     
     @classmethod
-    def create_dhcp_packet(cls, message_type, xid, yiaddr, chaddr, offered_ip):
+    def create_dhcp_packet(cls, message_type, xid, yiaddr, chaddr, offered_ip, lease_time):
         """Create a DHCP packet with all specified options in order."""
+        if lease_time is None:
+            lease_time = cls.LEASE_TIME
         packet = struct.pack(
             '!BBBBIHHIIII16s192x',
             2, 1, 6, 0, xid, 0, 0x8000,
@@ -48,7 +50,7 @@ class Config:
             (15, len("domain.local"), b"domain.local"),  # Domain Name
             (28, 4, socket.inet_aton("192.168.1.255")),  # Broadcast Address
             (50, 4, socket.inet_aton(offered_ip)),  # Requested IP Address
-            (51, 4, cls.LEASE_TIME.to_bytes(4, 'big')),  # IP Address Lease Time
+            (51, 4, lease_time.to_bytes(4, 'big')),  # IP Address Lease Time
             (52, 1, b'\x34\x00'),  # Option Overload
             (53, 1, bytes([message_type])),  # DHCP Message Type
             (54, 4, socket.inet_aton(cls.SERVER_IP)),  # DHCP Server Identifier

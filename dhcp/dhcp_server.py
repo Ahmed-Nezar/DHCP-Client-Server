@@ -21,7 +21,7 @@ class Server:
         "18:05:03:30:11:03",
     ]
     blocked_MAC = None
-
+    server_running = False
 
     @staticmethod
     def _write_ip_pool_to_file():
@@ -239,21 +239,42 @@ class Server:
         """Start the DHCP server."""
         Config.LEASE_TIME = int(args.lease_time) if args.lease_time else Config.LEASE_TIME
         Server.IP_POOL = Server.IP_POOL if not args.NAK else []
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.bind(('0.0.0.0', Server.SERVER_PORT))  # Bind to all available interfaces
+
         print(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
         logging.info(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
+
         Server._write_ip_pool_to_file()
         Server._read_ip_pool()
 
-        while True:
-            try:
-                data, address = sock.recvfrom(1024)
-                print(f"Received packet from {address}")
-                logging.info(f"Received packet from {address}")
-                Server._handle_dhcp_message(data, sock)
-            except Exception as e:
-                print(f"Error: {e}")
-                logging.error(f"Error: {e}")
+        Server.server_running = True  # Set the server running flag
+        try:
+            while Server.server_running:
+                try:
+                    sock.settimeout(1.0)  # Add a timeout to periodically check the flag
+                    data, address = sock.recvfrom(1024)
+                    if not Server.server_running:
+                        break  # Stop processing if the server is no longer running
+                    print(f"Received packet from {address}")
+                    logging.info(f"Received packet from {address}")
+                    Server._handle_dhcp_message(data, sock)
+                except socket.timeout:
+                    continue  # Timeout occurred, check the running flag again
+                except Exception as e:
+                    print(f"Error: {e}")
+                    logging.error(f"Error: {e}")
+        finally:
+            print("Shutting down the server...")
+            logging.info("Shutting down the server...")
+            sock.close()
+            Server.server_running = False
+            logging.info("Shutted Down")
+
+    @staticmethod
+    def stop():
+        """Stop the DHCP server."""
+        Server.server_running = False

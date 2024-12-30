@@ -15,14 +15,14 @@ args = parser.parse_args()
 def collect_user_input():
     client_id = input("Enter Client Identifier (MAC Address, e.g., 00:11:22:33:44:55): ")
     requested_ip = input("Enter Requested IP Address (or leave blank): ")
-    hostname = input("Enter Hostname (or leave blank): ")
     lease_time = input("Enter Lease Time in seconds (or leave blank for default): ")
-    parameter_request_list = input("Enter Parameter Request List (comma-separated, e.g., 1,3,6,51): ")
+    escape_discover = input("Enter 'y' to escape Discover message: ")
 
     config = {
         "client_mac": client_id,
         "requested_ip": requested_ip,
         "lease_time": int(lease_time) if lease_time else "",
+        "escape_discover": 1 if escape_discover == 'y' else 0
     }
 
     return config

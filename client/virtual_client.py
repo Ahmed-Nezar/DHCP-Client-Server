@@ -21,7 +21,7 @@ class DHCP_Client:
         return ':'.join([f"{random.randint(0, 255):02x}" for _ in range(6)])
 
     @staticmethod
-    def create_dhcp_discover(transaction_id, mac_address, requested_lease_time):
+    def create_dhcp_discover(transaction_id, mac_address, requested_lease_time, requested_ip):
         """Create a DHCP Discover packet."""
         chaddr = bytes.fromhex(mac_address.replace(':', '')) + b'\x00' * 10
 
@@ -49,13 +49,17 @@ class DHCP_Client:
         options += b'\x37\x03\x01\x03\x06'  # Parameter Request List: Subnet Mask, Router, DNS Server
         if requested_lease_time:
             options += b'\x33\x04' + struct.pack('!I', int(requested_lease_time))  # Requested Lease Time
+        if requested_ip:
+            options += b'\x32\x04' + socket.inet_aton(requested_ip)  # Requested IP Address
         options += b'\xff'  # End of options
 
         return packet + options
 
     @staticmethod
-    def create_dhcp_request(transaction_id, mac_address, offered_ip, requested_lease_time=None):
+    def create_dhcp_request(transaction_id, mac_address, offered_ip, requested_lease_time, requested_ip):
         """Create a DHCP Request packet."""
+        if requested_ip:
+            offered_ip = requested_ip
         chaddr = bytes.fromhex(mac_address.replace(':', '')) + b'\x00' * 10
 
         # DHCP Request packet
@@ -183,9 +187,10 @@ class DHCP_Client:
         transaction_id = DHCP_Client.generate_transaction_id()
         mac_address = config.get("client_id") or DHCP_Client.generate_mac_address()
         requested_lease_time = config.get("lease_time")
+        requested_ip = config.get("requested_ip")
 
         # Send DHCP Discover
-        discover_packet = DHCP_Client.create_dhcp_discover(transaction_id, mac_address, requested_lease_time)
+        discover_packet = DHCP_Client.create_dhcp_discover(transaction_id, mac_address, requested_lease_time, requested_ip)
         sock.sendto(discover_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
         print("Sent DHCP Discover")
 
@@ -220,7 +225,7 @@ class DHCP_Client:
 
                     break
             
-        request_packet = DHCP_Client.create_dhcp_request(transaction_id, mac_address, offered_ip, config['lease_time'])
+        request_packet = DHCP_Client.create_dhcp_request(transaction_id, mac_address, offered_ip, requested_lease_time, requested_ip)
         sock.sendto(request_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
         print("Sent DHCP Request")
 
@@ -258,7 +263,7 @@ class DHCP_Client:
 
             if DHCP_Client.LEASE_TIMER == offered_lease_time // 2:
                 print("Renewing lease...")
-                request_packet = DHCP_Client.create_dhcp_request(transaction_id, mac_address, leased_ip, offered_lease_time)
+                request_packet = DHCP_Client.create_dhcp_request(transaction_id, mac_address, leased_ip, offered_lease_time, requested_ip)
                 sock.sendto(request_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
                 print("Sent DHCP Renewal Request")
 

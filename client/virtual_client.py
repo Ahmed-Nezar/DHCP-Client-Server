@@ -157,6 +157,37 @@ class DHCP_Client:
         options += b'\xff'  # End of options
 
         return packet + options
+
+    @staticmethod
+    def create_dhcp_inform(transaction_id, mac_address, requested_ip):
+        """Create a DHCP Inform packet."""
+        chaddr = bytes.fromhex(mac_address.replace(':', '')) + b'\x00' * 10
+
+        # DHCP Inform packet
+        packet = struct.pack(
+            '!BBBBIHH4s4s4s4s16s192sI',
+            1,  # op: Boot Request
+            1,  # htype: Ethernet
+            6,  # hlen: MAC length
+            0,  # hops
+            transaction_id,  # Transaction ID
+            0,  # Seconds elapsed
+            0x8000,  # Flags: Broadcast
+            socket.inet_aton(requested_ip),  # Client IP
+            b'\x00\x00\x00\x00',  # Your IP
+            b'\x00\x00\x00\x00',  # Server IP
+            b'\x00\x00\x00\x00',  # Gateway IP
+            chaddr,  # Client hardware address (MAC)
+            b'\x00' * 192,  # Padding
+            0x63825363,  # Magic cookie
+        )
+
+        # DHCP options (Message Type = Inform)
+        options = b'\x35\x01\x08'  # DHCP Message Type: Inform
+        options += b'\x32\x04' + socket.inet_aton(requested_ip)
+        options += b'\xff'  # End of options
+
+        return packet + options
     
     @staticmethod
     def find_lease_time(data):
@@ -188,6 +219,24 @@ class DHCP_Client:
         mac_address = config.get("client_mac") or DHCP_Client.generate_mac_address()
         requested_lease_time = config.get("lease_time")
         requested_ip = config.get("requested_ip")
+
+        if config.get("inform"):
+            inform_packet = DHCP_Client.create_dhcp_inform(transaction_id, mac_address, requested_ip)
+            sock.sendto(inform_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
+            print("Sent DHCP Inform")
+            # Receive DHCP Ack or Nak
+            while True:
+                data, address = sock.recvfrom(1024)
+                if data[236:240] == b'\x63\x82\x53\x63':  # Check for Magic Cookie
+                    if b'\x35\x01\x05' in data:  # DHCP Message Type: Ack
+                        server_ip = socket.inet_ntoa(data[20:24])
+                        print(f"Received DHCP Ack from {address}")
+                        leased_ip = socket.inet_ntoa(data[16:20])
+                        return
+                    if b'\x35\x01\x06' in data: # DHCP Message Type: Nak
+                        print(f"Received DHCP Nak from {address}")
+                        print("Lease request denied.")
+                        return 
 
         if not(config.get("escape_discover")):
 
@@ -275,6 +324,5 @@ class DHCP_Client:
                 if data[236:240] == b'\x63\x82\x53\x63':
                     DHCP_Client.LEASE_TIMER = offered_lease_time
                     print(f"Received DHCP Ack from {address}")
-
 
         sock.close()

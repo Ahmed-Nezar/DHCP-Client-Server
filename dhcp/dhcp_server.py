@@ -16,7 +16,12 @@ class Server:
     ip_pool_dir = os.path.join(base_dir, "ip_pool.txt")
     available_ip_pool = []
     offered_ip = None
-
+    blocked_MACS = [
+        "17:11:03:23:12:02",
+        "18:05:03:30:11:03",
+    ]
+    blocked_MAC = None
+    server_running = False
 
     @staticmethod
     def _write_ip_pool_to_file():
@@ -75,20 +80,39 @@ class Server:
         print(f"Handling Discover for MAC: {mac_addr}")
         logging.info(f"Handling Discover for MAC: {mac_addr}")
         # Assign the first available IP
+        if mac_addr in Server.blocked_MACS:
+            Server.blocked_MAC = mac_addr
+            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip)    
+            return
+        else:
+            Server.blocked_MAC = None
+        
         Server.offered_ip = next((ip for ip in Server.available_ip_pool if ip not in Server.LEASES.values()), None)
         
-        Server._send_dhcp_message(2, transaction_id, mac_addr, sock, requested_ip)
+        if Server.offered_ip:
+            Server._send_dhcp_message(2, transaction_id, mac_addr, sock, requested_ip)
+        else:
+            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip)
         
 
 
     @staticmethod
     def _handle_NAK(msg_type, transaction_id, mac_addr, sock):
-        if not Server.offered_ip:
+        if Server.blocked_MAC:
+            print(f"MAC {mac_addr} is blocked!")
+            logging.warning(f"MAC {mac_addr} is blocked!")
+            # Send DHCP NAK
+            chaddr = bytes.fromhex(mac_addr.replace(":", ""))
+            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, "0.0.0.0", chaddr, "0.0.0.0")  # 6 = NAK
+            sock.sendto(nak_packet, ('<broadcast>', Server.CLIENT_PORT))
+            print(f"Sent NAK to MAC {mac_addr}")
+            logging.info(f"Sent NAK to MAC {mac_addr}")
+        elif not Server.offered_ip:
             print("No available IPs in the pool!")
             logging.warning("No available IPs in the pool!")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, "0.0.0.0", chaddr, Server.offered_ip)  # 6 = NAK
+            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, "0.0.0.0", chaddr, "0.0.0.0")  # 6 = NAK
             sock.sendto(nak_packet, ('<broadcast>', Server.CLIENT_PORT))
             print(f"Sent NAK to MAC {mac_addr}")
             logging.info(f"Sent NAK to MAC {mac_addr}")
@@ -166,13 +190,9 @@ class Server:
         """Handle DHCP Decline."""
         print(f"Handling Decline for MAC: {mac_addr}")
         logging.info(f"Handling Decline for MAC: {mac_addr}")
-        ip_address = Server.LEASES.get(mac_addr)
-        if ip_address:
-            Server.LEASES.pop(mac_addr)
-            Server.available_ip_pool.append(ip_address)
-            Server._write_ip_to_ip_pool_file(Server.available_ip_pool)
-            print(f"Declined IP {ip_address} for MAC {mac_addr}")
-            logging.info(f"Declined IP {ip_address} for MAC {mac_addr}")
+
+        print(f"Declined IP {Server.offered_ip} for MAC {mac_addr}")
+        logging.info(f"Declined IP {Server.offered_ip} for MAC {mac_addr}")
     
     @staticmethod
     def _handle_dhcp_message(data, sock):
@@ -219,21 +239,42 @@ class Server:
         """Start the DHCP server."""
         Config.LEASE_TIME = int(args.lease_time) if args.lease_time else Config.LEASE_TIME
         Server.IP_POOL = Server.IP_POOL if not args.NAK else []
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.bind(('0.0.0.0', Server.SERVER_PORT))  # Bind to all available interfaces
+
         print(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
         logging.info(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
+
         Server._write_ip_pool_to_file()
         Server._read_ip_pool()
 
-        while True:
-            try:
-                data, address = sock.recvfrom(1024)
-                print(f"Received packet from {address}")
-                logging.info(f"Received packet from {address}")
-                Server._handle_dhcp_message(data, sock)
-            except Exception as e:
-                print(f"Error: {e}")
-                logging.error(f"Error: {e}")
+        Server.server_running = True  # Set the server running flag
+        try:
+            while Server.server_running:
+                try:
+                    sock.settimeout(1.0)  # Add a timeout to periodically check the flag
+                    data, address = sock.recvfrom(1024)
+                    if not Server.server_running:
+                        break  # Stop processing if the server is no longer running
+                    print(f"Received packet from {address}")
+                    logging.info(f"Received packet from {address}")
+                    Server._handle_dhcp_message(data, sock)
+                except socket.timeout:
+                    continue  # Timeout occurred, check the running flag again
+                except Exception as e:
+                    print(f"Error: {e}")
+                    logging.error(f"Error: {e}")
+        finally:
+            print("Shutting down the server...")
+            logging.info("Shutting down the server...")
+            sock.close()
+            Server.server_running = False
+            logging.info("Shutted Down")
+
+    @staticmethod
+    def stop():
+        """Stop the DHCP server."""
+        Server.server_running = False

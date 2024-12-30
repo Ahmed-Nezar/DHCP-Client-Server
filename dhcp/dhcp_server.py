@@ -208,7 +208,7 @@ class Server:
             print(f"No offered IP for MAC {mac_addr}")
             logging.warning(f"No offered IP for MAC {mac_addr}")
             Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time)
-        elif lease_time > Config.LEASE_TIME:
+        elif lease_time and lease_time > Config.LEASE_TIME:
             Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time)
         else:
             Server._send_dhcp_message(5, transaction_id, mac_addr, sock, requested_ip, lease_time)

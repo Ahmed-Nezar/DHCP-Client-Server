@@ -185,7 +185,7 @@ class DHCP_Client:
         sock.bind(("0.0.0.0", DHCP_Client.CLIENT_PORT))
 
         transaction_id = DHCP_Client.generate_transaction_id()
-        mac_address = config.get("client_id") or DHCP_Client.generate_mac_address()
+        mac_address = config.get("client_mac") or DHCP_Client.generate_mac_address()
         requested_lease_time = config.get("lease_time")
         requested_ip = config.get("requested_ip")
 

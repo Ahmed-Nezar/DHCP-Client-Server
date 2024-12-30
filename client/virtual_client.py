@@ -21,7 +21,7 @@ class DHCP_Client:
         return ':'.join([f"{random.randint(0, 255):02x}" for _ in range(6)])
 
     @staticmethod
-    def create_dhcp_discover(transaction_id, mac_address):
+    def create_dhcp_discover(transaction_id, mac_address, requested_lease_time):
         """Create a DHCP Discover packet."""
         chaddr = bytes.fromhex(mac_address.replace(':', '')) + b'\x00' * 10
 
@@ -47,6 +47,8 @@ class DHCP_Client:
         # DHCP options (Message Type = Discover)
         options = b'\x35\x01\x01'  # DHCP Message Type: Discover
         options += b'\x37\x03\x01\x03\x06'  # Parameter Request List: Subnet Mask, Router, DNS Server
+        if requested_lease_time:
+            options += b'\x33\x04' + struct.pack('!I', int(requested_lease_time))  # Requested Lease Time
         options += b'\xff'  # End of options
 
         return packet + options
@@ -180,9 +182,10 @@ class DHCP_Client:
 
         transaction_id = DHCP_Client.generate_transaction_id()
         mac_address = config.get("client_id") or DHCP_Client.generate_mac_address()
+        requested_lease_time = config.get("lease_time")
 
         # Send DHCP Discover
-        discover_packet = DHCP_Client.create_dhcp_discover(transaction_id, mac_address)
+        discover_packet = DHCP_Client.create_dhcp_discover(transaction_id, mac_address, requested_lease_time)
         sock.sendto(discover_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
         print("Sent DHCP Discover")
 

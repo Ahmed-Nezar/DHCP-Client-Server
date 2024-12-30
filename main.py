@@ -20,11 +20,9 @@ def collect_user_input():
     parameter_request_list = input("Enter Parameter Request List (comma-separated, e.g., 1,3,6,51): ")
 
     config = {
-        "client_id": client_id,
+        "client_mac": client_id,
         "requested_ip": requested_ip,
-        "hostname": hostname,
         "lease_time": int(lease_time) if lease_time else "",
-        "parameter_request_list": parameter_request_list
     }
 
     return config

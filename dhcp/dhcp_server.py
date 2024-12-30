@@ -1,5 +1,7 @@
 import socket
 import logging
+import threading
+import time
 import os
 from config.config import Config
 
@@ -22,6 +24,9 @@ class Server:
     ]
     blocked_MAC = None
     server_running = False
+    lease_lock = threading.Lock()
+    LEASE_TIMERS = {}
+    lease_thread = None
 
     @staticmethod
     def _write_ip_pool_to_file():
@@ -75,6 +80,31 @@ class Server:
             i += 2 + length
 
         return transaction_id, mac_addr, msg_type, requested_ip, lease_time
+
+    @staticmethod
+    def _lease_timer():
+        """Thread to decrement lease times and reclaim expired IPs."""
+        while Server.server_running:
+            with Server.lease_lock:
+                expired_macs = []
+                for mac, remaining_time in Server.LEASE_TIMERS.items():
+                    if remaining_time <= 0:
+                        expired_macs.append(mac)
+                    else:
+                        Server.LEASE_TIMERS[mac] -= 1  # Decrement lease time
+                
+                # Reclaim expired leases
+                for mac in expired_macs:
+                    expired_ip = Server.LEASES.pop(mac, None)
+                    if expired_ip:
+                        Server.available_ip_pool.append(expired_ip)
+                        print(f"Reclaimed expired IP {expired_ip} for MAC {mac}")
+                        logging.info(f"Reclaimed expired IP {expired_ip} for MAC {mac}")
+                    Server.LEASE_TIMERS.pop(mac, None)
+                    Server._write_ip_to_ip_pool_file(Server.available_ip_pool)
+            
+            time.sleep(1)  # Wait 1 second before the next check
+
 
 
     @staticmethod
@@ -161,12 +191,14 @@ class Server:
         # Send DHCP Ack
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
         packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip, lease_time)  # 5 = Ack
+        
         if Server.offered_ip not in Server.LEASES.values():
             sock.sendto(packet, ('<broadcast>', Server.CLIENT_PORT))
         else:
             sock.sendto(packet, (Server.offered_ip, Server.CLIENT_PORT))
             
         Server.LEASES[mac_addr] = Server.offered_ip
+        Server.LEASE_TIMERS[mac_addr] = lease_time
         print(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
         logging.info(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
         try:
@@ -174,6 +206,12 @@ class Server:
         except:
             pass
         Server._write_ip_to_ip_pool_file(Server.available_ip_pool)
+        
+        if lease_time is None:
+            lease_time = Config.LEASE_TIME
+        
+        with Server.lease_lock:
+            Server.LEASE_TIMERS[mac_addr] = lease_time
 
     @staticmethod 
     def _handle_dhcp_release(mac_addr):
@@ -255,6 +293,8 @@ class Server:
         Server._read_ip_pool()
 
         Server.server_running = True  # Set the server running flag
+        Server.lease_thread = threading.Thread(target=Server._lease_timer)
+        Server.lease_thread.start()
         try:
             while Server.server_running:
                 try:
@@ -281,3 +321,5 @@ class Server:
     def stop():
         """Stop the DHCP server."""
         Server.server_running = False
+        if Server.lease_thread:
+            Server.lease_thread.join()

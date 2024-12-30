@@ -57,8 +57,9 @@ class Server:
 
         msg_type = None
         requested_ip = None
+        lease_time = None
 
-        # Parse options to find message type and requested IP
+        # Parse options to find message type, requested IP, and lease time
         i = 0
         while i < len(options):
             option_type = options[i]
@@ -69,13 +70,15 @@ class Server:
                 msg_type = options[i + 2]
             elif option_type == 50:  # Option 50: Requested IP Address
                 requested_ip = '.'.join(map(str, options[i + 2:i + 2 + length]))
+            elif option_type == 51:  # Option 51: IP Address Lease Time
+                lease_time = struct.unpack("!I", options[i + 2:i + 2 + length])[0]
             i += 2 + length
 
-        return transaction_id, mac_addr, msg_type, requested_ip
+        return transaction_id, mac_addr, msg_type, requested_ip, lease_time
 
 
     @staticmethod
-    def _handle_discover(transaction_id, mac_addr, sock, requested_ip):
+    def _handle_discover(transaction_id, mac_addr, sock, requested_ip, lease_time):
         """Handle DHCP Discover."""
         print(f"Handling Discover for MAC: {mac_addr}")
         logging.info(f"Handling Discover for MAC: {mac_addr}")
@@ -90,7 +93,7 @@ class Server:
         Server.offered_ip = next((ip for ip in Server.available_ip_pool if ip not in Server.LEASES.values()), None)
         
         if Server.offered_ip:
-            Server._send_dhcp_message(2, transaction_id, mac_addr, sock, requested_ip)
+            Server._send_dhcp_message(2, transaction_id, mac_addr, sock, requested_ip, lease_time)
         else:
             Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip)
         
@@ -119,7 +122,7 @@ class Server:
         
     
     @staticmethod
-    def _handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr):
+    def _handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr, lease_time):
         
         if requested_ip not in Server.available_ip_pool:
             requested_ip = None
@@ -129,14 +132,14 @@ class Server:
         
         # Send DHCP Offer
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-        packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip)  # 2 = Offer
+        packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip, lease_time)  # 2 = Offer
         sock.sendto(packet, ('<broadcast>', Server.CLIENT_PORT))
         print(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
         logging.info(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
         
 
     @staticmethod
-    def _handle_request(transaction_id, mac_addr, sock, requested_ip):
+    def _handle_request(transaction_id, mac_addr, sock, requested_ip, lease_time):
         """Handle DHCP Request."""
         print(f"Handling Request for MAC: {mac_addr}")
         logging.info(f"Handling Request for MAC: {mac_addr}")
@@ -150,14 +153,14 @@ class Server:
             logging.warning(f"No offered IP for MAC {mac_addr}")
             Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip)
         else:
-            Server._send_dhcp_message(5, transaction_id, mac_addr, sock, requested_ip)
+            Server._send_dhcp_message(5, transaction_id, mac_addr, sock, requested_ip, lease_time)
         
     
     @staticmethod
-    def _handle_ACK(msg_type, transaction_id, mac_addr, sock):
+    def _handle_ACK(msg_type, transaction_id, mac_addr, sock, lease_time):
         # Send DHCP Ack
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-        packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip)  # 5 = Ack
+        packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip, lease_time)  # 5 = Ack
         if Server.offered_ip not in Server.LEASES.values():
             sock.sendto(packet, ('<broadcast>', Server.CLIENT_PORT))
         else:
@@ -198,12 +201,12 @@ class Server:
     def _handle_dhcp_message(data, sock):
         """Parse DHCP message and determine the phase."""
         # Parse the received packet
-        transaction_id, mac_addr, msg_type, requested_ip = Server._parse_dhcp_packet(data)
+        transaction_id, mac_addr, msg_type, requested_ip, lease_time = Server._parse_dhcp_packet(data)
         if msg_type == 1:  # Discover   
-            Server._handle_discover(transaction_id,mac_addr, sock, requested_ip)
+            Server._handle_discover(transaction_id,mac_addr, sock, requested_ip, lease_time)
         
         elif msg_type == 3:  # Request
-            Server._handle_request(transaction_id, mac_addr, sock, requested_ip)
+            Server._handle_request(transaction_id, mac_addr, sock, requested_ip, lease_time)
         
         elif msg_type == 4:  # Decline
             Server._handle_decline(mac_addr)
@@ -216,13 +219,13 @@ class Server:
             logging.warning("Unknown DHCP message type")
     
     @staticmethod
-    def _send_dhcp_message(msg_type, transaction_id, mac_addr, sock, requested_ip):
+    def _send_dhcp_message(msg_type, transaction_id, mac_addr, sock, requested_ip, lease_time):
         
         if msg_type == 2:
-            Server._handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr)
+            Server._handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr, lease_time)
         
         elif msg_type == 5:
-            Server._handle_ACK(msg_type, transaction_id, mac_addr, sock)
+            Server._handle_ACK(msg_type, transaction_id, mac_addr, sock, lease_time)
         
         elif msg_type == 6:
             Server._handle_NAK(msg_type, transaction_id, mac_addr, sock)

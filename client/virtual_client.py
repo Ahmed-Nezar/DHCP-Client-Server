@@ -189,43 +189,47 @@ class DHCP_Client:
         requested_lease_time = config.get("lease_time")
         requested_ip = config.get("requested_ip")
 
-        # Send DHCP Discover
-        discover_packet = DHCP_Client.create_dhcp_discover(transaction_id, mac_address, requested_lease_time, requested_ip)
-        sock.sendto(discover_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
-        print("Sent DHCP Discover")
+        if not(config.get("escape_discover")):
 
-        # Receive DHCP Offer
-        while True:
-            data, address = sock.recvfrom(1024)
-            if data[236:240] == b'\x63\x82\x53\x63':  # Check for Magic Cookie
-                if b'\x35\x01\x06' in data: # DHCP Message Type: Nak
-                    print(f"Received DHCP Nak from {address}")
-                    print("Lease request denied.")
-                    sock.close()
-                    return
-                elif b'\x35\x01\x02' in data:  # DHCP Message Type: Offer
-                    print(f"Received DHCP Offer from {address}")
-                    offered_ip = socket.inet_ntoa(data[16:20])
-                    print(f"Offered IP: {offered_ip}")
-                    offered_lease_time = DHCP_Client.find_lease_time(data)
+            # Send DHCP Discover
+            discover_packet = DHCP_Client.create_dhcp_discover(transaction_id, mac_address, requested_lease_time, requested_ip)
+            sock.sendto(discover_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
+            print("Sent DHCP Discover")
 
-                    # Simulate checking the offered IP (replace with actual validation logic if needed)
-                    if config['requested_ip'] and offered_ip != config['requested_ip']:
-                        print(f"Offered IP {offered_ip} does not match requested IP {config['requested_ip']}")
-                        decline_packet = DHCP_Client.create_dhcp_decline(transaction_id, mac_address,declined_ip=offered_ip)
-                        sock.sendto(decline_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
-                        print("Sent DHCP Decline for IP", offered_ip)
+            # Receive DHCP Offer
+            while True:
+                data, address = sock.recvfrom(1024)
+                if data[236:240] == b'\x63\x82\x53\x63':  # Check for Magic Cookie
+                    if b'\x35\x01\x06' in data: # DHCP Message Type: Nak
+                        print(f"Received DHCP Nak from {address}")
+                        print("Lease request denied.")
+                        sock.close()
                         return
-                    
-                    if config['lease_time'] and offered_lease_time < config['lease_time']:
-                        decline_packet = DHCP_Client.create_dhcp_decline(transaction_id, mac_address, declined_lease_time=offered_lease_time)
-                        sock.sendto(decline_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
-                        print("Sent DHCP Decline for lease time", offered_lease_time)
-                        return
+                    elif b'\x35\x01\x02' in data:  # DHCP Message Type: Offer
+                        print(f"Received DHCP Offer from {address}")
+                        offered_ip = socket.inet_ntoa(data[16:20])
+                        print(f"Offered IP: {offered_ip}")
+                        offered_lease_time = DHCP_Client.find_lease_time(data)
 
-                    break
+                        # Simulate checking the offered IP (replace with actual validation logic if needed)
+                        if config['requested_ip'] and offered_ip != config['requested_ip']:
+                            print(f"Offered IP {offered_ip} does not match requested IP {config['requested_ip']}")
+                            decline_packet = DHCP_Client.create_dhcp_decline(transaction_id, mac_address,declined_ip=offered_ip)
+                            sock.sendto(decline_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
+                            print("Sent DHCP Decline for IP", offered_ip)
+                            return
+                        
+                        if config['lease_time'] and offered_lease_time < config['lease_time']:
+                            decline_packet = DHCP_Client.create_dhcp_decline(transaction_id, mac_address, declined_lease_time=offered_lease_time)
+                            sock.sendto(decline_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
+                            print("Sent DHCP Decline for lease time", offered_lease_time)
+                            return
+
+                        break
             
-        request_packet = DHCP_Client.create_dhcp_request(transaction_id, mac_address, offered_ip, requested_lease_time, requested_ip)
+            request_packet = DHCP_Client.create_dhcp_request(transaction_id, mac_address, offered_ip, requested_lease_time, requested_ip)
+        else:
+            request_packet = DHCP_Client.create_dhcp_request(transaction_id, mac_address, requested_ip, requested_lease_time, requested_ip)
         sock.sendto(request_packet, (DHCP_Client.BROADCAST_IP, DHCP_Client.SERVER_PORT))
         print("Sent DHCP Request")
 
@@ -241,7 +245,7 @@ class DHCP_Client:
                 if b'\x35\x01\x06' in data: # DHCP Message Type: Nak
                     print(f"Received DHCP Nak from {address}")
                     print("Lease request denied.")
-                    break 
+                    return 
 
         def release_ip(signum, frame):
             print("Client terminated. Releasing IP...")

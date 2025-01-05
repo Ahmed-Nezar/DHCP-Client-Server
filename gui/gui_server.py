@@ -6,7 +6,7 @@ import os
 import sys
 from dhcp.dhcp_server import Server
 from client.virtual_client import DHCP_Client
-
+import multiprocessing
 
 class TextRedirector:
     """Redirect output streams to a text widget."""
@@ -24,7 +24,6 @@ class TextRedirector:
 
     def flush(self):
         pass
-
 
 class DHCPServerGUI:
     def __init__(self, root):
@@ -61,6 +60,9 @@ class DHCPServerGUI:
 
         ctk.CTkLabel(server_config_frame, text="Server Configuration").pack(anchor="w")
         self.server_mode = ctk.StringVar(value="")  # No default selection
+        
+        # Radio buttons for server configuration Normal, Empty Pool, Specify Lease Time
+        ctk.CTkRadioButton(server_config_frame, text="Default", variable=self.server_mode, value="normal").pack(anchor="w")
         ctk.CTkRadioButton(server_config_frame, text="Empty Pool", variable=self.server_mode, value="empty_pool").pack(anchor="w")
         ctk.CTkRadioButton(server_config_frame, text="Specify Lease Time", variable=self.server_mode, value="specify_lease").pack(anchor="w")
 
@@ -122,7 +124,6 @@ class DHCPServerGUI:
                 self.mac_entry.pack_forget()
                 self.lease_label.pack_forget()
                 self.lease_entry.pack_forget()
-
 
         self.client_mode.trace("w", lambda *args: on_client_mode_change())
 
@@ -209,6 +210,9 @@ class DHCPServerGUI:
             lease_time = int(lease_time)
             logging.info(f"Starting the server with specified lease time (--lease-time={lease_time}).")
             server_args = argparse.Namespace(server=True, lease_time=lease_time, NAK=False)
+        elif self.server_mode.get() == "normal":
+            logging.info("Starting the server in Normal mode.")
+            server_args = argparse.Namespace(server=True, lease_time=None, NAK=False)
 
         # Redirect stdout and stderr for the server logs
         sys.stdout = self.server_log_redirector
@@ -228,7 +232,6 @@ class DHCPServerGUI:
         for widget in self.configuration_frame.winfo_children()[0].winfo_children():
             widget.configure(state="disabled")
 
-
     def stop_server(self):
         """Stop the server."""
         if self.server_running:
@@ -245,24 +248,15 @@ class DHCPServerGUI:
             sys.stdout = sys.__stdout__
             sys.stderr = sys.__stderr__
 
-
-
     def start_client(self):
-        """Start the client with the provided configuration."""
-        # Check if a radio button is selected
-        if not self.client_mode.get():
-            logging.error("You must select a client configuration option before starting the client.")
+        """Start the client with the provided configuration in a new process."""
+        if not self.client_mode.get() or not self.server_running:
             self.client_logs_text.configure(state="normal")
-            self.client_logs_text.insert("end", "Error: No client configuration selected.\n")
+            self.client_logs_text.insert("end", "Error: No client configuration selected or server not running.\n")
             self.client_logs_text.configure(state="disabled")
             return
 
-        # Prepare arguments based on the selected radio button
         if self.client_mode.get() == "inform":
-            logging.info("Starting the client in INFORM mode (--INFORM).")
-            self.client_logs_text.configure(state="normal")
-            self.client_logs_text.insert("end", "Starting the client in INFORM mode (--INFORM).\n")
-            self.client_logs_text.configure(state="disabled")
             client_options = {
                 "client_mac": "00:11:22:33:44:55",  # Default INFORM MAC
                 "requested_ip": "192.168.1.10",     # Default INFORM IP
@@ -270,27 +264,16 @@ class DHCPServerGUI:
                 "escape_discover": 0,
                 "inform": 1
             }
-
         elif self.client_mode.get() == "test_case":
-            # Collect input values
             requested_ip = self.ip_entry.get().strip()
             client_id = self.mac_entry.get().strip()
             lease_time = self.lease_entry.get().strip()
-
-            # Validate inputs
             if not requested_ip and not client_id and not lease_time:
-                logging.error("You must provide at least one input (IP, MAC, or Lease Time) for Test Case mode.")
                 self.client_logs_text.configure(state="normal")
                 self.client_logs_text.insert("end", "Error: No inputs provided for Test Case mode.\n")
                 self.client_logs_text.configure(state="disabled")
                 return
 
-            logging.info(f"Starting the client in Test Case mode with inputs: IP={requested_ip}, MAC={client_id}, Lease Time={lease_time}.")
-            self.client_logs_text.configure(state="normal")
-            self.client_logs_text.insert("end", f"Starting the client in Test Case mode with inputs: IP={requested_ip}, MAC={client_id}, Lease Time={lease_time}.\n")
-            self.client_logs_text.configure(state="disabled")
-
-            # Prepare arguments for Test Case mode
             client_options = {
                 "client_mac": client_id if client_id else "",
                 "requested_ip": requested_ip if requested_ip else "",
@@ -299,22 +282,56 @@ class DHCPServerGUI:
                 "inform": 0
             }
 
-        # Redirect stdout and stderr for client logs
-        sys.stdout = self.client_log_redirector
-        sys.stderr = self.client_error_redirector
+        # Create a queue for log communication
+        self.client_log_queue = multiprocessing.Queue()
 
-        # Start the client
-        try:
-            DHCP_Client().start(client_options)
-            logging.info("Client started successfully.")
+        # Start the client process with the queue
+        self.client_process = multiprocessing.Process(target=run_client, args=(client_options, self.client_log_queue))
+        self.client_process.start()
+
+        # Poll logs from the client process
+        self.poll_client_logs()
+
+    def poll_client_logs(self):
+        """Poll logs from the client process and display them in the GUI."""
+        while not self.client_log_queue.empty():
+            log_message = self.client_log_queue.get()
             self.client_logs_text.configure(state="normal")
-            self.client_logs_text.insert("end", "Client started successfully.\n")
+            self.client_logs_text.insert("end", log_message + "\n")
             self.client_logs_text.configure(state="disabled")
-        except Exception as e:
-            logging.error(f"Error starting client: {e}")
-            self.client_logs_text.configure(state="normal")
-            self.client_logs_text.insert("end", f"Error starting client: {e}\n")
-            self.client_logs_text.configure(state="disabled")
+            self.client_logs_text.see("end")
+        if self.client_process.is_alive():  # Keep polling while the process is running
+            self.root.after(100, self.poll_client_logs)
+        else:
+            # Check if there are any remaining logs after the process exits
+            while not self.client_log_queue.empty():
+                log_message = self.client_log_queue.get()
+                self.client_logs_text.configure(state="normal")
+                self.client_logs_text.insert("end", log_message + "\n")
+                self.client_logs_text.configure(state="disabled")
+                self.client_logs_text.see("end")
+
+def run_client(client_options, log_queue):
+    """Run a DHCP client with the given options and redirect logs to the main process."""
+    class QueueWriter:
+        def __init__(self, queue):
+            self.queue = queue
+
+        def write(self, message):
+            if message.strip():  # Avoid logging empty lines
+                self.queue.put(message)
+
+        def flush(self):
+            pass
+
+    # Redirect stdout and stderr to the log queue
+    sys.stdout = QueueWriter(log_queue)
+    sys.stderr = QueueWriter(log_queue)
+
+    try:
+        DHCP_Client().start(client_options)
+    except Exception as e:
+        print(f"Error starting client: {e}")
 
 
 

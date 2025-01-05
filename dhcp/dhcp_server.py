@@ -225,8 +225,9 @@ class Server:
         else:
             sock.sendto(packet, (Server.offered_ip, Server.CLIENT_PORT))
             
-        Server.LEASES[mac_addr] = Server.offered_ip
-        Server.LEASE_TIMERS[mac_addr] = lease_time
+        if not Server.offered_ip == "0.0.0.0":
+            Server.LEASES[mac_addr] = Server.offered_ip
+            Server.LEASE_TIMERS[mac_addr] = lease_time
         print(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
         logging.info(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
         try:

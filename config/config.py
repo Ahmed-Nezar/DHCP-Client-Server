@@ -18,14 +18,14 @@ class Config:
     MAGIC_COOKIE = b'\x63\x82\x53\x63'
     
     @classmethod
-    def create_dhcp_packet(cls, message_type, xid, yiaddr, chaddr, offered_ip, lease_time):
+    def create_dhcp_packet(cls, message_type, xid, chaddr, offered_ip, lease_time):
         """Create a DHCP packet with all specified options in order."""
         if lease_time is None:
             lease_time = cls.LEASE_TIME
         packet = struct.pack(
             '!BBBBIHHIIII16s192x',
             2, 1, 6, 0, xid, 0, 0x8000,
-            0, struct.unpack("!I", socket.inet_aton(yiaddr))[0],
+            0, struct.unpack("!I", socket.inet_aton(offered_ip))[0],
             struct.unpack("!I", socket.inet_aton(cls.SERVER_IP))[0], 0,
             chaddr.ljust(16, b'\x00')
         )

@@ -141,7 +141,7 @@ class Server:
             logging.warning(f"MAC {mac_addr} is blocked!")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, "0.0.0.0", chaddr, "0.0.0.0", lease_time)  # 6 = NAK
+            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)  # 6 = NAK
             sock.sendto(nak_packet, ('<broadcast>', Server.CLIENT_PORT))
             print(f"Sent NAK to MAC {mac_addr}")
             logging.info(f"Sent NAK to MAC {mac_addr}")
@@ -153,14 +153,14 @@ class Server:
             logging.info(f"Sent NAK to MAC {mac_addr}")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, "0.0.0.0", chaddr, "0.0.0.0", lease_time)
+            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)
 
         elif lease_time > Config.LEASE_TIME:
             print(f"Lease time is greater than the maximum lease time")
             logging.warning(f"Lease time is greater than the maximum lease time")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, "0.0.0.0", chaddr, "0.0.0.0", lease_time)
+            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)
 
         elif not Server.offered_ip:
             print("No available IPs in the pool!")
@@ -169,7 +169,7 @@ class Server:
             logging.info(f"Sent NAK to MAC {mac_addr}")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, "0.0.0.0", chaddr, "0.0.0.0", lease_time)  # 6 = NAK
+            nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)  # 6 = NAK
             sock.sendto(nak_packet, ('<broadcast>', Server.CLIENT_PORT))
             print(f"Sent NAK to MAC {mac_addr}")
             logging.info(f"Sent NAK to MAC {mac_addr}")
@@ -185,7 +185,7 @@ class Server:
         
         # Send DHCP Offer
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-        packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip, lease_time)  # 2 = Offer
+        packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, Server.offered_ip, lease_time)  # 2 = Offer
         sock.sendto(packet, ('<broadcast>', Server.CLIENT_PORT))
         print(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
         logging.info(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
@@ -218,7 +218,7 @@ class Server:
     def _handle_ACK(msg_type, transaction_id, mac_addr, sock, lease_time):
         # Send DHCP Ack
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
-        packet = Config.create_dhcp_packet(msg_type, transaction_id, Server.offered_ip, chaddr, Server.offered_ip, lease_time)  # 5 = Ack
+        packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, Server.offered_ip, lease_time)  # 5 = Ack
         
         if Server.offered_ip not in Server.LEASES.values():
             sock.sendto(packet, ('<broadcast>', Server.CLIENT_PORT))

@@ -1,3 +1,4 @@
+import multiprocessing
 import customtkinter as ctk
 import threading
 import argparse
@@ -5,7 +6,8 @@ import logging
 import os
 import sys
 from dhcp.dhcp_server import Server
-from gui.common_utils import TextRedirector
+from gui.common_utils import TextRedirector, LogRedirector
+import queue  # For handling queue exceptions
 
 
 class DHCPServerGUI:
@@ -86,7 +88,7 @@ class DHCPServerGUI:
                 self.lease_time_label.pack_forget()
                 self.lease_time_entry.pack_forget()
 
-        self.server_mode.trace("w", lambda *args: on_server_mode_change())
+        self.server_mode.trace_add("write", lambda *args: on_server_mode_change())
 
         # Available IPs Section
         self.available_ips_frame = ctk.CTkFrame(self.root)
@@ -111,12 +113,28 @@ class DHCPServerGUI:
         self.server_logs_text.pack(fill="both", expand=True)
 
         # Redirect stdout and stderr for Server Logs
-        self.server_log_redirector = TextRedirector(self.server_logs_text, "stdout")
-        self.server_error_redirector = TextRedirector(self.server_logs_text, "stderr")
+        self.server_log_redirector = LogRedirector(self.server_logs_text)
+        self.server_error_redirector = LogRedirector(self.server_logs_text)
 
-        self.server_thread = None
-        self.server_running = False
+        # self.server_thread = None
+        # self.server_running = False
+        self.server_process = None  # Process for the DHCP server
+        self.server_running = multiprocessing.Event()  
+        self.log_queue = multiprocessing.Queue() 
 
+    def process_logs(self):
+        """Fetch logs from the queue and update the log display."""
+        try:
+            while not self.log_queue.empty():
+                log_message = self.log_queue.get_nowait()
+                self.server_logs_text.configure(state="normal")
+                self.server_logs_text.insert("end", log_message + "\n")
+                self.server_logs_text.configure(state="disabled")
+                self.server_logs_text.see("end")  # Scroll to the latest log
+        except queue.Empty:
+            pass
+        self.root.after(100, self.process_logs)  # Schedule the next check
+    
     def load_available_ips(self):
         """Load available IPs from a file and update the GUI."""
         ip_pool_path = os.path.join(os.path.dirname(__file__), "../dhcp/ip_pool.txt")
@@ -178,33 +196,36 @@ class DHCPServerGUI:
         sys.stdout = self.server_log_redirector
         sys.stderr = self.server_error_redirector
 
-        # Start the server in a new thread
-        self.server_thread = threading.Thread(
-            target=lambda: Server.start_dhcp_server(server_args),
-            daemon=True,
+        # Start the server in a separate process
+        self.server_running.set()  # Enable the server event
+        self.server_process = multiprocessing.Process(
+            target=Server.start_dhcp_server, args=(server_args, self.log_queue)
         )
-        self.server_running = True
-        self.server_thread.start()
+        self.server_process.start()
+        # self.server_running = True
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
 
         # Disable the Server Configuration section
         for widget in self.configuration_frame.winfo_children()[0].winfo_children():
             widget.configure(state="disabled")
+        
+        self.process_logs()  # Start processing logs
+
 
     def stop_server(self):
-        """Stop the server."""
-        if self.server_running:
-            self.server_running = False
-            Server.stop()
-            self.start_button.configure(state="normal")
-            self.stop_button.configure(state="disabled")
+        """Stop the server process."""
+        if self.server_process and self.server_process.is_alive():
+            self.server_running.clear()  # Signal the server to stop
+            self.server_process.terminate()  # Forcefully terminate the server process
+            self.server_process.join()  # Wait for the process to terminate
+            self.server_process = None
 
-            # Re-enable the Server Configuration section
-            for widget in self.configuration_frame.winfo_children()[0].winfo_children():
-                widget.configure(state="normal")
+        self.start_button.configure(state="normal")
+        self.stop_button.configure(state="disabled")
 
-            # Reset stdout and stderr
-            sys.stdout = sys.__stdout__
-            sys.stderr = sys.__stderr__
+        for widget in self.configuration_frame.winfo_children()[0].winfo_children():
+            widget.configure(state="normal")
 
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__

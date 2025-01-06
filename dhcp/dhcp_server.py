@@ -1,3 +1,4 @@
+import multiprocessing
 import socket
 import logging
 import threading
@@ -7,12 +8,13 @@ from config.config import Config
 
 
 
+
 class Server:
     # Server configuration
     SERVER_IP = socket.gethostbyname(socket.gethostname())
     SERVER_PORT = 67
     CLIENT_PORT = 68
-    IP_POOL = [f"192.168.1.{i}" for i in range(10, 51)]  # IP pool from 192.168.1.10 to 192.168.1.50
+    IP_POOL = [f"192.168.1.{i}" for i in range(10, 31)]  # IP pool from 192.168.1.10 to 192.168.1.50
     LEASES = {}  # Store client leases {MAC: IP}
     DISCOVERED_MACS = []    
     base_dir = os.path.dirname(__file__)
@@ -28,6 +30,7 @@ class Server:
     lease_lock = threading.Lock()
     LEASE_TIMERS = {}
     lease_thread = None
+
 
 
     @staticmethod
@@ -84,7 +87,7 @@ class Server:
         return transaction_id, mac_addr, msg_type, requested_ip, lease_time
 
     @staticmethod
-    def _lease_timer():
+    def _lease_timer(log_queue):
         """Thread to decrement lease times and reclaim expired IPs."""
         while Server.server_running:
             with Server.lease_lock:
@@ -101,6 +104,7 @@ class Server:
                     if expired_ip:
                         Server.available_ip_pool.append(expired_ip)
                         print(f"Reclaimed expired IP {expired_ip} for MAC {mac}")
+                        log_queue.put(f"Reclaimed expired IP {expired_ip} for MAC {mac}")
                         logging.info(f"Reclaimed expired IP {expired_ip} for MAC {mac}")
                     Server.LEASE_TIMERS.pop(mac, None)
                     Server._write_ip_to_ip_pool_file(Server.available_ip_pool)
@@ -110,14 +114,15 @@ class Server:
 
 
     @staticmethod
-    def _handle_discover(transaction_id, mac_addr, sock, requested_ip, lease_time):
+    def _handle_discover(transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue):
         """Handle DHCP Discover."""
         print(f"Handling Discover for MAC: {mac_addr}")
+        log_queue.put(f"Handling Discover for MAC: {mac_addr}")
         logging.info(f"Handling Discover for MAC: {mac_addr}")
         # Assign the first available IP
         if mac_addr in Server.blocked_MACS:
             Server.blocked_MAC = mac_addr
-            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time)    
+            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)    
             return
         else:
             Server.blocked_MAC = None
@@ -127,28 +132,32 @@ class Server:
         Server.DISCOVERED_MACS.append(mac_addr)
 
         if Server.offered_ip:
-            Server._send_dhcp_message(2, transaction_id, mac_addr, sock, requested_ip, lease_time)
+            Server._send_dhcp_message(2, transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)
             
         else:
-            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time)
+            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)
         
 
     @staticmethod
-    def _handle_NAK(msg_type, transaction_id, mac_addr, sock, lease_time):
+    def _handle_NAK(msg_type, transaction_id, mac_addr, sock, lease_time, log_queue):
         if Server.blocked_MAC is not None and mac_addr in Server.blocked_MAC:
             print(f"MAC {mac_addr} is blocked!")
+            log_queue.put(f"MAC {mac_addr} is blocked!")
             logging.warning(f"MAC {mac_addr} is blocked!")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
             nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)  # 6 = NAK
             sock.sendto(nak_packet, ('<broadcast>', Server.CLIENT_PORT))
             print(f"Sent NAK to MAC {mac_addr}")
+            log_queue.put(f"Sent NAK to MAC {mac_addr}")
             logging.info(f"Sent NAK to MAC {mac_addr}")
 
         elif mac_addr not in Server.DISCOVERED_MACS:
             print(f"No DISCOVER message found for MAC {mac_addr}")
+            log_queue.put(f"No DISCOVER message found for MAC {mac_addr}")
             logging.warning(f"No DISCOVER message found for MAC {mac_addr}")
             print(f"Sent NAK to MAC {mac_addr}")
+            log_queue.put(f"Sent NAK to MAC {mac_addr}")
             logging.info(f"Sent NAK to MAC {mac_addr}")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
@@ -156,16 +165,20 @@ class Server:
 
         elif lease_time and lease_time > Config.LEASE_TIME:
             print(f"Lease time is greater than the maximum lease time")
+            log_queue.put(f"Lease time is greater than the maximum lease time")
             logging.warning(f"Lease time is greater than the maximum lease time")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
             print(f"Sent NAK to MAC {mac_addr}")
+            log_queue.put(f"Sent NAK to MAC {mac_addr}")
             nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)
 
         elif not Server.offered_ip:
             print("No available IPs in the pool!")
+            log_queue.put("No available IPs in the pool!")
             logging.warning("No available IPs in the pool!")
             print(f"Sent NAK to MAC {mac_addr}")
+            log_queue.put(f"Sent NAK to MAC {mac_addr}")
             logging.info(f"Sent NAK to MAC {mac_addr}")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
@@ -173,7 +186,7 @@ class Server:
             sock.sendto(nak_packet, ('<broadcast>', Server.CLIENT_PORT))
 
     @staticmethod
-    def _handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr, lease_time):
+    def _handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr, lease_time, log_queue):
         
         if requested_ip not in Server.available_ip_pool:
             requested_ip = None
@@ -186,16 +199,18 @@ class Server:
         packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, Server.offered_ip, lease_time)  # 2 = Offer
         sock.sendto(packet, ('<broadcast>', Server.CLIENT_PORT))
         print(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
+        log_queue.put(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
         logging.info(f"Offered IP {Server.offered_ip} to MAC {mac_addr}")
         
 
     @staticmethod
-    def _handle_request(transaction_id, mac_addr, sock, requested_ip, lease_time):
+    def _handle_request(transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue):
         """Handle DHCP Request."""
         print(f"Handling Request for MAC: {mac_addr}")
+        log_queue.put(f"Handling Request for MAC: {mac_addr}")
         logging.info(f"Handling Request for MAC: {mac_addr}")
         if mac_addr not in Server.DISCOVERED_MACS:
-            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time)
+            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)
             return
 
         if requested_ip not in Server.available_ip_pool:
@@ -204,16 +219,17 @@ class Server:
         Server.offered_ip = Server.LEASES.get(mac_addr) if requested_ip is None else requested_ip
         if not Server.offered_ip:
             print(f"No offered IP for MAC {mac_addr}")
+            log_queue.put(f"No offered IP for MAC {mac_addr}")
             logging.warning(f"No offered IP for MAC {mac_addr}")
-            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time)
+            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)
         elif lease_time and lease_time > Config.LEASE_TIME:
-            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time)
+            Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)
         else:
-            Server._send_dhcp_message(5, transaction_id, mac_addr, sock, requested_ip, lease_time)
+            Server._send_dhcp_message(5, transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)
         
     
     @staticmethod
-    def _handle_ACK(msg_type, transaction_id, mac_addr, sock, lease_time):
+    def _handle_ACK(msg_type, transaction_id, mac_addr, sock, lease_time, log_queue):
         # Send DHCP Ack
         chaddr = bytes.fromhex(mac_addr.replace(":", ""))
         packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, Server.offered_ip, lease_time)  # 5 = Ack
@@ -227,6 +243,7 @@ class Server:
             Server.LEASES[mac_addr] = Server.offered_ip
             Server.LEASE_TIMERS[mac_addr] = lease_time
         print(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
+        log_queue.put(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
         logging.info(f"Acknowledged IP {Server.offered_ip} for MAC {mac_addr}")
         try:
             Server.available_ip_pool.remove(Server.offered_ip)
@@ -241,9 +258,10 @@ class Server:
             Server.LEASE_TIMERS[mac_addr] = lease_time
 
     @staticmethod 
-    def _handle_dhcp_release(mac_addr):
+    def _handle_dhcp_release(mac_addr, log_queue):
         """Handle DHCP Release."""
         print(f"Handling Release for MAC: {mac_addr}")
+        log_queue.put(f"Handling Release for MAC: {mac_addr}")
         logging.info(f"Handling Release for MAC: {mac_addr}")
         ip_address = Server.LEASES.get(mac_addr)
         if ip_address:
@@ -251,69 +269,75 @@ class Server:
             Server.available_ip_pool.append(ip_address)
             Server._write_ip_to_ip_pool_file(Server.available_ip_pool)
             print(f"Released IP {ip_address} for MAC {mac_addr}")
+            log_queue.put(f"Released IP {ip_address} for MAC {mac_addr}")
             logging.info(f"Released IP {ip_address} for MAC {mac_addr}")
     
     @staticmethod
-    def _handle_decline(mac_addr):
+    def _handle_decline(mac_addr, log_queue):
         """Handle DHCP Decline."""
         print(f"Handling Decline for MAC: {mac_addr}")
+        log_queue.put(f"Handling Decline for MAC: {mac_addr}")
         logging.info(f"Handling Decline for MAC: {mac_addr}")
 
         print(f"Declined IP {Server.offered_ip} for MAC {mac_addr}")
+        log_queue.put(f"Declined IP {Server.offered_ip} for MAC {mac_addr}")
         logging.info(f"Declined IP {Server.offered_ip} for MAC {mac_addr}")
 
     @staticmethod
-    def _handle_dhcp_inform(transaction_id , mac_addr, sock, requested_ip, lease_time):
+    def _handle_dhcp_inform(transaction_id , mac_addr, sock, requested_ip, lease_time, log_queue):
         """Handle DHCP Inform."""
         print(f"Handling INFORM for MAC: {mac_addr}")
+        log_queue.put(f"Handling INFORM for MAC: {mac_addr}")
         logging.info(f"Handling INFORM for MAC: {mac_addr}")
         Server.offered_ip = "0.0.0.0"
-        Server._send_dhcp_message(5, transaction_id, mac_addr, sock, Server.SERVER_IP, lease_time)
+        Server._send_dhcp_message(5, transaction_id, mac_addr, sock, Server.SERVER_IP, lease_time, log_queue)
         
             
 
     
     @staticmethod
-    def _handle_dhcp_message(data, sock):
+    def _handle_dhcp_message(data, sock, log_queue):
         """Parse DHCP message and determine the phase."""
         # Parse the received packet
         transaction_id, mac_addr, msg_type, requested_ip, lease_time = Server._parse_dhcp_packet(data)
         if msg_type == 1:  # Discover   
-            Server._handle_discover(transaction_id,mac_addr, sock, requested_ip, lease_time)
+            Server._handle_discover(transaction_id,mac_addr, sock, requested_ip, lease_time, log_queue)
         
         elif msg_type == 3:  # Request
-            Server._handle_request(transaction_id, mac_addr, sock, requested_ip, lease_time)
+            Server._handle_request(transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)
         
         elif msg_type == 4:  # Decline
-            Server._handle_decline(mac_addr)
+            Server._handle_decline(mac_addr, log_queue)
         
         elif msg_type == 7: # Handling DHCP Release
-            Server._handle_dhcp_release(mac_addr)
+            Server._handle_dhcp_release(mac_addr, log_queue)
 
         elif msg_type == 8: # Handling DHCP Inform
-            Server._handle_dhcp_inform(transaction_id, mac_addr, sock, requested_ip, lease_time)
+            Server._handle_dhcp_inform(transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue)
             
         else:
             print("Unknown DHCP message type")
+            log_queue.put("Unknown DHCP message type")
             logging.warning("Unknown DHCP message type")
     
     @staticmethod
-    def _send_dhcp_message(msg_type, transaction_id, mac_addr, sock, requested_ip, lease_time):
+    def _send_dhcp_message(msg_type, transaction_id, mac_addr, sock, requested_ip, lease_time, log_queue):
         if msg_type == 2: # Offer
-            Server._handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr, lease_time)
+            Server._handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr, lease_time, log_queue)
         
         elif msg_type == 5: # Ack
-            Server._handle_ACK(msg_type, transaction_id, mac_addr, sock, lease_time)
+            Server._handle_ACK(msg_type, transaction_id, mac_addr, sock, lease_time, log_queue)
         
         elif msg_type == 6: # NAK
-            Server._handle_NAK(msg_type, transaction_id, mac_addr, sock, lease_time)
+            Server._handle_NAK(msg_type, transaction_id, mac_addr, sock, lease_time, log_queue)
         
         else:
             print("Unknown DHCP message type")
+            log_queue.put("Unknown DHCP message type")
             logging.warning("Unknown DHCP message type")
 
     @staticmethod
-    def start_dhcp_server(args):
+    def start_dhcp_server(args, log_queue):
         """Start the DHCP server."""
         Config.LEASE_TIME = int(args.lease_time) if args.lease_time else Config.LEASE_TIME
         Server.IP_POOL = Server.IP_POOL if not args.NAK else []
@@ -324,13 +348,14 @@ class Server:
         sock.bind(('0.0.0.0', Server.SERVER_PORT))  # Bind to all available interfaces
 
         print(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
+        log_queue.put(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
         logging.info(f"DHCP server running on IP({Server.SERVER_IP}) PORT({Server.SERVER_PORT})")
 
         Server._write_ip_pool_to_file()
         Server._read_ip_pool()
 
         Server.server_running = True  # Set the server running flag
-        Server.lease_thread = threading.Thread(target=Server._lease_timer)
+        Server.lease_thread = threading.Thread(target=Server._lease_timer, args=(log_queue,))
         Server.lease_thread.start()
         try:
             while Server.server_running:
@@ -340,15 +365,18 @@ class Server:
                     if not Server.server_running:
                         break  # Stop processing if the server is no longer running
                     print(f"Received packet from {address}")
+                    log_queue.put(f"Received packet from {address}")
                     logging.info(f"Received packet from {address}")
-                    Server._handle_dhcp_message(data, sock)
+                    Server._handle_dhcp_message(data, sock, log_queue)
                 except socket.timeout:
                     continue  # Timeout occurred, check the running flag again
                 except Exception as e:
                     print(f"Error: {e}")
+                    log_queue.put(f"Error: {e}")
                     logging.error(f"Error: {e}")
         finally:
             print("Shutting down the server...")
+            log_queue.put("Shutting down the server...")
             logging.info("Shutting down the server...")
             sock.close()
             Server.server_running = False

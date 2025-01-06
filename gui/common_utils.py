@@ -16,3 +16,17 @@ class TextRedirector:
 
     def flush(self):
         pass
+
+class LogRedirector:
+    def __init__(self, text_widget):
+        self.text_widget = text_widget
+
+    def write(self, message):
+        if message.strip():  # Avoid empty lines
+            self.text_widget.configure(state="normal")
+            self.text_widget.insert("end", message + "\n")
+            self.text_widget.configure(state="disabled")
+            self.text_widget.see("end")  # Scroll to the latest message
+
+    def flush(self):
+        pass  # Needed for compatibility with `sys.stdout` and `sys.stderr`

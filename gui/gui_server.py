@@ -1,12 +1,11 @@
 import multiprocessing
 import customtkinter as ctk
-import threading
 import argparse
 import logging
 import os
 import sys
 from dhcp.dhcp_server import Server, resource_path
-from gui.common_utils import TextRedirector, LogRedirector
+from gui.common_utils import LogRedirector
 import queue  # For handling queue exceptions
 
 

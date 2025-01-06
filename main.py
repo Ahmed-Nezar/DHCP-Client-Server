@@ -1,12 +1,13 @@
 from dhcp.dhcp_server import Server
 from client.virtual_client import DHCP_Client
 from utils.utils import parse_arguments, collect_user_input
+from multiprocessing import Queue
 
 
 args = parse_arguments()
 
 if args.server:
-    Server.start_dhcp_server(args)
+    Server.start_dhcp_server(args, Queue())
 elif args.client:
     client_options = collect_user_input(args)
     client = DHCP_Client().start(client_options)

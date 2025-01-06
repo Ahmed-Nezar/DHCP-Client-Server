@@ -1,4 +1,6 @@
 import argparse
+import sys
+import os
 
 def parse_arguments():
     # Initialize the argument parser
@@ -35,3 +37,11 @@ def collect_user_input(args, inform=False):
     }
 
     return config
+
+def resource_path(relative_path):
+    """ Get the absolute path to a resource. Works for both development and PyInstaller. """
+    if getattr(sys, 'frozen', False):  # If the app is bundled
+        base_path = sys._MEIPASS  # Temporary directory used by PyInstaller
+    else:
+        base_path = os.path.abspath(".")  # Use the current directory in development
+    return os.path.join(base_path, relative_path)

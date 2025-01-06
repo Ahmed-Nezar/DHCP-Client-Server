@@ -1,2 +1,3 @@
 customtkinter==5.2.2
 cx-Freeze==7.2.8
+pyinstaller==6.11.1

@@ -133,7 +133,6 @@ class Server:
             Server._send_dhcp_message(6, transaction_id, mac_addr, sock, requested_ip, lease_time)
         
 
-
     @staticmethod
     def _handle_NAK(msg_type, transaction_id, mac_addr, sock, lease_time):
         if Server.blocked_MAC is not None and mac_addr in Server.blocked_MAC:
@@ -155,11 +154,12 @@ class Server:
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
             nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)
 
-        elif lease_time > Config.LEASE_TIME:
+        elif lease_time and lease_time > Config.LEASE_TIME:
             print(f"Lease time is greater than the maximum lease time")
             logging.warning(f"Lease time is greater than the maximum lease time")
             # Send DHCP NAK
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
+            print(f"Sent NAK to MAC {mac_addr}")
             nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)
 
         elif not Server.offered_ip:
@@ -171,8 +171,6 @@ class Server:
             chaddr = bytes.fromhex(mac_addr.replace(":", ""))
             nak_packet = Config.create_dhcp_packet(msg_type, transaction_id, chaddr, "0.0.0.0", lease_time)  # 6 = NAK
             sock.sendto(nak_packet, ('<broadcast>', Server.CLIENT_PORT))
-            print(f"Sent NAK to MAC {mac_addr}")
-            logging.info(f"Sent NAK to MAC {mac_addr}")
 
     @staticmethod
     def _handle_offer(msg_type, sock, requested_ip, transaction_id, mac_addr, lease_time):

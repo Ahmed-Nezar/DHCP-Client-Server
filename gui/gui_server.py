@@ -5,7 +5,7 @@ import argparse
 import logging
 import os
 import sys
-from dhcp.dhcp_server import Server
+from dhcp.dhcp_server import Server, resource_path
 from gui.common_utils import TextRedirector, LogRedirector
 import queue  # For handling queue exceptions
 
@@ -137,7 +137,7 @@ class DHCPServerGUI:
     
     def load_available_ips(self):
         """Load available IPs from a file and update the GUI."""
-        ip_pool_path = os.path.join(os.path.dirname(__file__), "../dhcp/ip_pool.txt")
+        ip_pool_path = resource_path("ip_pool.txt")
         self.available_ips_text.configure(state="normal")
         self.available_ips_text.delete("1.0", "end")
         try:

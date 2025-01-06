@@ -2,12 +2,13 @@ import os
 import logging
 import struct
 import socket
+from utils.utils import resource_path
 
 
 
 class Config:
     # Configure logging
-    log_path = os.path.join(os.path.dirname(__file__), 'server.log')
+    log_path = resource_path("server.log")
     logging.basicConfig(filename=log_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # Constants

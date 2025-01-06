@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 import os
-from config.config import Config
+from config.config import Config, resource_path
 
 
 
@@ -18,7 +18,7 @@ class Server:
     LEASES = {}  # Store client leases {MAC: IP}
     DISCOVERED_MACS = []    
     base_dir = os.path.dirname(__file__)
-    ip_pool_dir = os.path.join(base_dir, "ip_pool.txt")
+    ip_pool_dir = resource_path("ip_pool.txt")
     available_ip_pool = []
     offered_ip = None
     blocked_MACS = [

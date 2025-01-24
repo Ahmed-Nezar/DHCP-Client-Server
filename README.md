@@ -129,6 +129,9 @@ The project directory is organized as follows:
 
 2. **Logging**
    - Logs are automatically saved in `server.log` for server events and `client.log` for client activities.
+3. **Illustrative Video**
+   - You can click [here](https://drive.google.com/drive/folders/1P-PXiZGh47M4nkYne3F0tZyrBmpNH6Ck) to check the project video  
+
 
 3. **Testing**
    - You can run test cases using the GUI to simulate client-server interactions with different configurations.
